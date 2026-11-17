@@ -1,0 +1,23 @@
+{
+  "name": "veil",
+  "version": "1.0.0",
+  "description": "Use cloud AI on text you cannot share: Gemini Nano masks on device, Gemini in the cloud works on placeholders.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "firebase": "^13.4.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  },
+  "type": "module"
+}

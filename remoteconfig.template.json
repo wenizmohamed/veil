@@ -1,0 +1,24 @@
+{
+  "parameters": {
+    "veil_cloud_model": {
+      "defaultValue": { "value": "gemini-3.5-flash-lite" },
+      "description": "Cloud model that answers over masked text.",
+      "valueType": "STRING"
+    },
+    "veil_categories": {
+      "defaultValue": { "value": "[\"PERSON\",\"ORG\",\"EMAIL\",\"PHONE\",\"ADDRESS\",\"ID\",\"ACCOUNT\",\"MONEY\",\"SECRET\",\"DATE\"]" },
+      "description": "Categories Veil masks on device before anything leaves.",
+      "valueType": "JSON"
+    },
+    "veil_allow_local_reasoning": {
+      "defaultValue": { "value": "true" },
+      "description": "Allow the user to keep the answer step on device too.",
+      "valueType": "BOOLEAN"
+    },
+    "veil_max_chars": {
+      "defaultValue": { "value": "6000" },
+      "description": "Largest input Veil accepts in one run.",
+      "valueType": "NUMBER"
+    }
+  }
+}
