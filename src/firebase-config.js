@@ -1,5 +1,5 @@
 // Firebase web config. These values identify the project; they are not secrets.
-// Access is protected by App Check (reCAPTCHA v3), Firestore rules and API key restrictions.
+// Access is protected by App Check (reCAPTCHA Enterprise), Firestore rules and API key restrictions.
 // Replace with your own project's values to run your own copy (see README).
 export const firebaseConfig = {
   apiKey: "AIzaSyBoDnVi82J1M2LUkbggaaszT0Od7xT5VPY",

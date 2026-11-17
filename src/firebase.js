@@ -1,6 +1,6 @@
 // All Firebase wiring for Veil: AI Logic (hybrid), App Check, Auth, Remote Config, Firestore.
 import { initializeApp } from "firebase/app";
-import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, InferenceSource } from "firebase/ai";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { getRemoteConfig, fetchAndActivate, getValue } from "firebase/remote-config";
@@ -16,7 +16,7 @@ const app = initializeApp(firebaseConfig);
 if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 }
-initializeAppCheck(app, { provider: new ReCaptchaV3Provider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
+initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
 const auth = getAuth(app);
