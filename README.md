@@ -36,7 +36,7 @@ The interesting part is that hybrid inference isn't used as a fallback switch. T
 | Product | How Veil uses it | Code |
 | --- | --- | --- |
 | **Firebase AI Logic** (Gemini Developer API) | Hybrid inference: `getGenerativeModel` with `ONLY_ON_DEVICE` for detection (Gemini Nano, `onDeviceParams.promptOptions.responseConstraint`) and `ONLY_IN_CLOUD` for the task, `initializeDeviceModel()` with download progress, `inferenceSource` badges | [`src/firebase.js`](src/firebase.js), [`src/main.js`](src/main.js) |
-| **App Check** (reCAPTCHA v3) | Required by AI Logic; protects the Gemini API from abuse | [`src/firebase.js`](src/firebase.js) |
+| **App Check** (reCAPTCHA Enterprise / Fraud Defense) | Required by AI Logic; protects the Gemini API from abuse | [`src/firebase.js`](src/firebase.js) |
 | **Authentication** (anonymous) | Each browser gets its own receipts, no sign-up | [`src/firebase.js`](src/firebase.js) |
 | **Remote Config** | Live policy: cloud model name, which categories to mask, max input size, whether local-only answering is allowed | [`src/firebase.js`](src/firebase.js), [`remoteconfig.template.json`](remoteconfig.template.json) |
 | **Cloud Firestore** | Privacy receipts, with rules that reject any field other than counts and sources | [`firestore.rules`](firestore.rules) |
@@ -57,7 +57,7 @@ On `localhost` the app uses an App Check **debug token**: the browser console pr
 ### Use your own Firebase project
 
 1. Create a Firebase project, add a Web app, and open **AI Logic > Get started > Gemini Developer API**.
-2. Create a reCAPTCHA v3 key for your domain and register it in **App Check** for the web app.
+2. Create a reCAPTCHA Enterprise (Fraud Defense) key for your domain and register it in **App Check** for the web app.
 3. Enable **Authentication > Anonymous**, create a **Firestore** database and paste in [`firestore.rules`](firestore.rules).
 4. Optional: import [`remoteconfig.template.json`](remoteconfig.template.json) in **Remote Config**.
 5. Put your web config and reCAPTCHA site key in [`src/firebase-config.js`](src/firebase-config.js). These identify the project and are not secrets; access is protected by App Check and the security rules.
