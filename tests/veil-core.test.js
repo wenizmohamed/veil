@@ -67,3 +67,21 @@ describe("mask / leak guard / unmask", () => {
     expect(Object.values(counts).every(Number.isInteger)).toBe(true);
   });
 });
+
+describe("name and company backstop", () => {
+  const MAIL = `Hi Sara Al Mansoori,\n\nFollowing our call, Falcon Logistics agrees.\n\nBest,\nOmar Khalid\nHead of Finance, Falcon Logistics`;
+  const found = detectWithRules(MAIL);
+  const texts = found.filter((f) => f.type === "PERSON" || f.type === "ORG").map((f) => f.text);
+  it("catches names from greetings and sign-offs, and company names by suffix", () => {
+    expect(texts).toContain("Sara Al Mansoori");
+    expect(texts).toContain("Omar Khalid");
+    expect(texts).toContain("Falcon Logistics");
+  });
+  it("masks the signature name so it never reaches the cloud", () => {
+    const plan = buildPlan(found);
+    expect(mask(MAIL, plan)).not.toMatch(/Omar|Khalid|Sara|Falcon/);
+  });
+  it("ignores lowercase greetings", () => {
+    expect(detectWithRules("Hi team,\nthanks all", ["PERSON"])).toHaveLength(0);
+  });
+});
