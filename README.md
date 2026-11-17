@@ -24,7 +24,7 @@ The interesting part is that hybrid inference isn't used as a fallback switch. T
 ## Features
 
 - **Gemini Nano entity detection** with a JSON `responseConstraint` (people, organizations, emails, phones, addresses, IDs, accounts, amounts, secrets, dates). Spans the model invents or paraphrases are rejected: a value is only masked if it appears verbatim in the text.
-- **Deterministic safety net**: built-in rules for emails, phone numbers, IBANs, Luhn-valid card numbers, Emirates ID, US SSN, amounts in AED/USD/EUR/GBP/SAR, and API keys (Stripe, AWS, GitHub, JWT).
+- **Deterministic safety net**: built-in rules for emails, phone numbers, IBANs, Luhn-valid card numbers, Emirates ID, US SSN, amounts in AED/USD/EUR/GBP/SAR, and API keys (Stripe, AWS, GitHub, JWT). Name cues (greetings, sign-offs, titles like Mr/Dr, company suffixes like LLC or Logistics) back up the model, because a small on-device model will sometimes miss a name, and masking too much is safer than leaking.
 - **Honest degradation**: if Gemini Nano isn't available, Veil masks with rules only and **pauses** before sending, telling you names and companies weren't checked. You can review, keep everything local, or send anyway.
 - **"What the cloud saw" panel**: the exact outgoing request, so you can verify nothing private left.
 - **Inference badges** on every step from the SDK's `inferenceSource` (on device vs in cloud).
