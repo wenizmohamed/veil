@@ -30,9 +30,26 @@ function luhn(digits) {
   return sum % 10 === 0;
 }
 
+// Name and company cues: a backstop for when the small on-device model misses one.
+// Each rule's first capture group is the value. Masking too much is safer than leaking.
+const NAME = "[A-Z][a-z'’-]+(?:[ \\t]+(?:Al|Bin|bin|El|de|van|[A-Z][a-z'’-]+)){0,3}";
+const CONTEXT_RULES = [
+  ["PERSON", new RegExp(`\\b(?:Hi|Hello|Dear|Hey)\\s+(${NAME})`, "g")],
+  ["PERSON", new RegExp(`(?:Best|Regards|Kind regards|Best regards|Thanks|Thank you|Sincerely|Cheers),?[ \\t]*\\n[ \\t]*(${NAME})`, "g")],
+  ["PERSON", new RegExp(`\\b(?:Mr|Mrs|Ms|Dr|Eng)\\.?\\s+(${NAME})`, "g")],
+  ["ORG", /\b((?:[A-Z][A-Za-z&'’-]+[ \t]+){1,3}(?:LLC|Ltd|Inc|FZE|FZCO|FZ-LLC|PJSC|Group|Holdings|Logistics|Bank|Capital|Partners|Technologies|Solutions|Properties))\b/g],
+];
+
 /** Regex detections as {text, type, source:'rules'}. */
 export function detectWithRules(text, enabled = CATEGORIES) {
   const out = [];
+  for (const [type, re] of CONTEXT_RULES) {
+    if (!enabled.includes(type)) continue;
+    for (const m of text.matchAll(re)) {
+      const t = (m[1] || "").trim();
+      if (t.length >= 3) out.push({ text: t, type, source: "rules" });
+    }
+  }
   for (const [type, re] of DETECTORS) {
     if (!enabled.includes(type)) continue;
     for (const m of text.matchAll(re)) {
