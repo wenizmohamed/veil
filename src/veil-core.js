@@ -68,7 +68,7 @@ export function sanitizeModelSpans(text, spans, enabled = CATEGORIES) {
   for (const s of spans) {
     const t = typeof s?.text === "string" ? s.text.trim() : "";
     const type = typeof s?.type === "string" ? s.type.toUpperCase() : "";
-    if (t.length < 2 || !CATEGORIES.includes(type) || !enabled.includes(type)) continue;
+    if (t.length < 3 || !CATEGORIES.includes(type) || !enabled.includes(type)) continue;
     if (!text.includes(t)) continue; // the model may not invent or paraphrase
     out.push({ text: t, type, source: "nano" });
   }
@@ -96,18 +96,24 @@ export function buildPlan(spans) {
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Whole-value matches only: "Ali" must not match inside "Alison" or "Bali".
+function valueRe(value, flags = "i") {
+  const pre = /^\w/.test(value) ? "(?<![\\w])" : "";
+  const post = /\w$/.test(value) ? "(?![\\w])" : "";
+  return new RegExp(pre + escapeRe(value) + post, flags);
+}
+
 export function mask(text, plan) {
   let out = text;
   for (const e of [...plan].sort((a, b) => b.text.length - a.text.length)) {
-    out = out.replace(new RegExp(escapeRe(e.text), "gi"), e.token);
+    out = out.replace(valueRe(e.text, "gi"), e.token);
   }
   return out;
 }
 
 /** Throws if any original secret would still leave the device. */
 export function leakCheck(outbound, plan) {
-  const lower = outbound.toLowerCase();
-  const leaked = plan.filter((e) => lower.includes(e.text.toLowerCase()));
+  const leaked = plan.filter((e) => valueRe(e.text).test(outbound));
   if (leaked.length) {
     const err = new Error(`Leak guard blocked the request: ${leaked.length} masked value(s) still present.`);
     err.leaked = leaked;
