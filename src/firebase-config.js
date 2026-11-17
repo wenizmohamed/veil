@@ -2,11 +2,11 @@
 // Access is protected by App Check (reCAPTCHA v3), Firestore rules and API key restrictions.
 // Replace with your own project's values to run your own copy (see README).
 export const firebaseConfig = {
-  apiKey: "AIzaSyBcx2rvdsIjcJQYHpK0W6b1mZpOMBEOMQs",
-  authDomain: "veil-hybrid-ff417.firebaseapp.com",
-  projectId: "veil-hybrid-ff417",
-  storageBucket: "veil-hybrid-ff417.firebasestorage.app",
-  messagingSenderId: "60699311158",
-  appId: "1:60699311158:web:b6db34408c9a06ee042c97",
+  apiKey: "AIzaSyBoDnVi82J1M2LUkbggaaszT0Od7xT5VPY",
+  authDomain: "hubz-510406.firebaseapp.com",
+  projectId: "hubz-510406",
+  storageBucket: "hubz-510406.firebasestorage.app",
+  messagingSenderId: "250034773804",
+  appId: "1:250034773804:web:3786703990ecf595599689",
 };
-export const recaptchaSiteKey = "6LeuayQuAAAAAI5ItuKqXOzWPCLbr-WMDHTp7f7j";
+export const recaptchaSiteKey = "6Lf7cyQuAAAAACO3qIXl4IW-pkM2hU85C510-i2T";
