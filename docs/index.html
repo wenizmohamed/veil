@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Veil: private AI with hybrid inference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="./assets/index-5xlBZFPK.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-D6H6oGMw.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Veil</h1>
+      <p class="lede">Use cloud AI on text you can't share. Gemini Nano finds the private values <b>on your device</b> and swaps them for placeholders. Gemini in the cloud works on the placeholders. Veil puts the real values back locally.</p>
+      <div class="meta"><span id="device"></span><span id="policy"></span></div>
+    </header>
+
+    <ol class="steps">
+      <li data-step="1"><b>1 · Find</b><span class="note">Gemini Nano, on device</span></li>
+      <li data-step="2"><b>2 · Guard</b><span class="note">Leak check before sending</span></li>
+      <li data-step="3"><b>3 · Ask</b><span class="note">Cloud model, placeholders only</span></li>
+      <li data-step="4"><b>4 · Restore</b><span class="note">Real values back, on device</span></li>
+    </ol>
+
+    <div class="grid">
+      <section>
+        <h2>Your text <small>stays here</small></h2>
+        <textarea id="input" spellcheck="false"></textarea>
+        <div class="row">
+          <label>Task <select id="task"></select></label>
+          <label class="check"><input type="checkbox" id="local" /> Keep everything local</label>
+        </div>
+        <button id="run">Run privately</button>
+        <p id="error" class="error"></p>
+        <h3>Result <small>restored on your device</small></h3>
+        <div id="out" class="out"></div>
+      </section>
+
+      <section>
+        <h2>Masked on device <span id="detectorBadge"></span></h2>
+        <ul id="plan" class="plan"><li class="empty">Run to see what gets masked.</li></ul>
+        <p class="sub"><span id="planCount">0</span> values never leave this browser.</p>
+        <h3>What the cloud saw <span id="reasonerBadge"></span></h3>
+        <pre id="cloudSaw" class="mono"></pre>
+        <h3>What the cloud answered</h3>
+        <pre id="cloudSaid" class="mono"></pre>
+        <h3>Privacy receipts <small>Firestore: counts only, never text</small></h3>
+        <ul id="receipts" class="receipts"></ul>
+      </section>
+    </div>
+    <footer>Veil · Apache-2.0 · Firebase AI Logic hybrid inference, App Check, Auth, Remote Config, Firestore · <a href="https://github.com/wenizmohamed/veil">source</a></footer>
+  </div>
+</body>
+</html>
