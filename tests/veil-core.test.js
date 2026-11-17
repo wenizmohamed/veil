@@ -85,3 +85,13 @@ describe("name and company backstop", () => {
     expect(detectWithRules("Hi team,\nthanks all", ["PERSON"])).toHaveLength(0);
   });
 });
+
+describe("whole-value masking", () => {
+  it("does not mask a short value inside a longer word", () => {
+    const plan = buildPlan([{ text: "Ali", type: "PERSON", source: "nano" }]);
+    expect(mask("Ali met Alison in Bali.", plan)).toBe("[PERSON_1] met Alison in Bali.");
+  });
+  it("drops model spans shorter than three characters", () => {
+    expect(sanitizeModelSpans("Wire to AE07 0331", [{ text: "AE", type: "ADDRESS" }])).toHaveLength(0);
+  });
+});
