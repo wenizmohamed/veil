@@ -3,132 +3,467 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Veil: private AI with hybrid inference</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231b1a17'/%3E%3Cpath d='M8 9l8 15 8-15' fill='none' stroke='%2382c6a3' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <title>Veil Private - Hybrid AI Privacy Sanctuary</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23080e1a'/%3E%3Cpath d='M8 9l8 15 8-15' fill='none' stroke='%2338bdf8' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='10' r='2' fill='%2322c55e'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>Veil</h1>
-      <p class="lede">Use cloud AI on text you can't share. Gemini Nano finds the private values <b>on your device</b> and swaps them for placeholders. Gemini in the cloud works on the placeholders. Veil puts the real values back locally.</p>
-      <div class="meta"><span id="device"></span><span id="policy"></span></div>
+  <!-- Atmospheric Nightshift Twilight Wallpaper -->
+  <div class="wallpaper" aria-hidden="true">
+    <div class="sky-glow"></div>
+    <canvas id="starfield" class="starfield"></canvas>
+    <svg class="horizon-hills" viewBox="0 0 1440 320" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="hillBack" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0d1d1c" stop-opacity="0.82" />
+          <stop offset="100%" stop-color="#07100d" stop-opacity="0.98" />
+        </linearGradient>
+        <linearGradient id="hillFront" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0b1713" stop-opacity="0.94" />
+          <stop offset="100%" stop-color="#050a08" stop-opacity="1" />
+        </linearGradient>
+      </defs>
+      <path d="M0,168 C220,104 420,118 680,174 C930,228 1180,126 1440,148 L1440,320 L0,320 Z" fill="url(#hillBack)" />
+      <path d="M0,224 C290,176 540,256 860,204 C1120,162 1280,188 1440,214 L1440,320 L0,320 Z" fill="url(#hillFront)" />
+    </svg>
+    <div class="ambient-orb" aria-hidden="true"></div>
+  </div>
+
+  <div class="app-shell">
+    <!-- Floating Nightshift Top Capsule Navbar -->
+    <nav class="topbar" aria-label="Primary navigation">
+      <div class="topbar-left">
+        <a href="#top" class="glass-pill brand-pill" id="brandHome" aria-label="Veil Private home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+              <path d="M4.5 6.5L12 19L19.5 6.5" stroke="#38BDF8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="12" cy="7.5" r="2" fill="#22C55E" />
+            </svg>
+          </span>
+          <span class="brand-name">Veil</span>
+          <span class="brand-italic">Private</span>
+        </a>
+
+        <button type="button" id="topLocalToggle" class="mode-switch" role="switch" aria-checked="false" title="Toggle 100% On-Device Local Mode">
+          <span class="mode-switch-thumb" aria-hidden="true"></span>
+          <span class="mode-switch-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none">
+              <path d="M8 1.75L3 4v3.8c0 3.15 2.13 5.88 5 6.7 2.87-.82 5-3.55 5-6.7V4L8 1.75z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </button>
+
+        <button type="button" id="runStressTest" class="glass-pill pill-action" title="Run 12-Trap Adversarial PII Stress Test">
+          <span class="pill-dot ok" aria-hidden="true"></span>
+          <span>12-Trap Test</span>
+        </button>
+      </div>
+
+      <!-- Centered Nightshift Live Privacy Status Capsule -->
+      <div id="statusCapsule" class="glass-pill status-capsule" aria-live="polite">
+        <span id="capsuleDot" class="status-dot ok" aria-hidden="true"></span>
+        <span id="capsuleLabel" class="capsule-text">On-Device Local · 0 PII Left Device</span>
+        <span id="capsuleChip" class="capsule-chip tabular">0 masked</span>
+      </div>
+
+      <!-- Right Nightshift Segmented White-Pill Tabs -->
+      <div class="topbar-right">
+        <div class="segmented-track" role="tablist" aria-label="Veil workspace views">
+          <button type="button" class="seg-tab active" role="tab" aria-selected="true" data-tab="workspace">Workspace</button>
+          <button type="button" class="seg-tab" role="tab" aria-selected="false" data-tab="routing">Routing</button>
+          <button type="button" class="seg-tab" role="tab" aria-selected="false" data-tab="audit">Audit</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Editorial Header -->
+    <header id="top" class="hero-header">
+      <div class="hero-copy">
+        <p class="eyebrow">HYBRID PRIVACY SANCTUARY · FIREBASE AI LOGIC</p>
+        <h1 class="hero-title">Veil <span class="serif-accent">Private</span></h1>
+        <p class="lede">Use cloud AI on text you cannot share. Gemini Nano masks private values <b>on your device</b> before placeholders cross the wire, then restores your real data locally.</p>
+      </div>
+      <div class="hero-status-stack">
+        <div class="meta-pill" id="device"></div>
+        <div class="meta-pill meta-policy" id="policy">Loading Firebase Remote Config policy...</div>
+      </div>
     </header>
 
-    <ol class="steps">
-      <li data-step="1"><b>1 · Find</b><span class="note">Gemini Nano, on device</span></li>
-      <li data-step="2"><b>2 · Guard</b><span class="note">Leak check before sending</span></li>
-      <li data-step="3"><b>3 · Ask</b><span class="note">Cloud model, placeholders only</span></li>
-      <li data-step="4"><b>4 · Restore</b><span class="note">Real values back, on device</span></li>
-    </ol>
-
+    <!-- Live Privacy Audit Telemetry Ribbon -->
     <div id="auditStrip" class="audit-strip" aria-live="polite">
       <div class="audit-metrics">
         <span class="audit-item" id="auditLeaks"><span class="dot ok"></span>0 secrets leaked</span>
-        <span class="audit-sep" aria-hidden="true">·</span>
-        <span class="audit-item" id="auditMasked">0 values masked</span>
-        <span class="audit-sep" aria-hidden="true">·</span>
+        <span class="audit-sep" aria-hidden="true">/</span>
+        <span class="audit-item tabular" id="auditMasked">0 values masked</span>
+        <span class="audit-sep" aria-hidden="true">/</span>
         <span class="audit-item" id="auditGuard">Leak Guard: <b>READY</b></span>
-        <span class="audit-sep" aria-hidden="true">·</span>
-        <span class="audit-item mono-item" id="auditLatency">On-device: -- ms · Cloud: -- ms</span>
+        <span class="audit-sep" aria-hidden="true">/</span>
+        <span class="audit-item mono-item tabular" id="auditLatency">On-device: -- ms · Cloud: -- ms</span>
       </div>
-      <button id="runStressTest" type="button" class="btn-sm btn-stress">Run 12-Trap PII Stress Test</button>
+      <div class="audit-actions">
+        <span class="audit-engine-tag" id="auditRouteTag">Route: Local Preview</span>
+      </div>
     </div>
 
-    <div id="stressPanel" class="stress-panel" hidden>
+    <!-- 12-Trap Adversarial PII Stress Test Panel (Accessible from Any Tab) -->
+    <div id="stressPanel" class="obsidian-card stress-panel" hidden>
       <div class="stress-head">
         <div class="stress-title">
           <span class="badge dev" id="stressSummary">12/12 Caught On-Device · 0 Bytes Leaked</span>
-          <span class="mono-item" id="stressMeta"></span>
+          <span class="mono-item tabular" id="stressMeta"></span>
         </div>
-        <button id="closeStressPanel" type="button" class="btn-sm">Hide</button>
+        <button id="closeStressPanel" type="button" class="btn-glass-sm">Hide</button>
       </div>
       <div id="stressGrid" class="stress-grid"></div>
     </div>
 
-    <div class="grid">
-      <section>
-        <div class="heading-row top-heading">
-          <h2>Your text <small>stays here</small></h2>
-          <span class="preset-hint">Try an industry preset</span>
-        </div>
-        <div id="presets" class="presets" role="group" aria-label="Industry presets"></div>
-        <textarea id="input" spellcheck="false"></textarea>
-        <div class="row">
-          <label>Task <select id="task"></select></label>
-          <label class="check"><input type="checkbox" id="local" /> Keep everything local</label>
-        </div>
-        <div class="actions-bar">
-          <button id="run" type="button">Run privately</button>
-        </div>
-
-        <div id="degradeCallout" class="callout amber" role="status" hidden>
-          <div class="callout-title" id="degradeTitle">Gemini Nano isn't downloaded yet in this browser</div>
-          <p class="callout-body" id="degradeBody"></p>
-          <div class="callout-actions">
-            <button id="approveRulesSend" type="button" class="btn-amber">Approve Rules-Only Mask &amp; Send to Cloud</button>
-            <button id="keepLocalBtn" type="button" class="btn-ghost">Keep everything local</button>
+    <!-- TAB 1: WORKSPACE -->
+    <main class="tab-panel" data-panel="workspace">
+      <!-- 4-Step Hybrid Pipeline Cards -->
+      <ol class="steps" aria-label="Hybrid privacy pipeline">
+        <li class="step-card" data-step="1">
+          <div class="step-head">
+            <span class="step-num">01</span>
+            <b>Find</b>
+            <span class="step-indicator" aria-hidden="true"></span>
           </div>
-        </div>
-
-        <p id="error" class="error"></p>
-
-        <div class="heading-row">
-          <h3>Result <span id="restoredPill" class="restored-pill" hidden>Restored locally</span></h3>
-          <button id="copyResult" type="button" class="btn-sm" disabled>Copy restored result</button>
-        </div>
-        <div id="out" class="out"></div>
-      </section>
-
-      <section>
-        <h2>Masked on device <span id="detectorBadge"></span></h2>
-        <ul id="plan" class="plan"><li class="empty">Run to see what gets masked.</li></ul>
-        <p class="sub"><span id="planCount">0</span> values never leave this browser.</p>
-        <h3>What the cloud saw <span id="reasonerBadge"></span></h3>
-        <pre id="cloudSaw" class="mono"></pre>
-        <h3>What the cloud answered</h3>
-        <pre id="cloudSaid" class="mono"></pre>
-
-        <div class="heading-row">
-          <h3>Outbound wiretap &amp; SHA-256 proof <span id="wiretapBadge" class="badge dev" hidden>0 raw secrets in HTTP bytes</span></h3>
-          <button id="downloadCert" type="button" class="btn-sm" disabled>Download Zero-Text Compliance Certificate (.json)</button>
-        </div>
-        <div id="wiretapBox" class="wiretap-box">
-          <div class="wiretap-row">
-            <span class="wiretap-label">Endpoint</span>
-            <code id="wiretapEndpoint" class="mono-item">Awaiting outbound cloud call</code>
+          <span class="note">Gemini Nano, on device</span>
+        </li>
+        <li class="step-card" data-step="2">
+          <div class="step-head">
+            <span class="step-num">02</span>
+            <b>Guard</b>
+            <span class="step-indicator" aria-hidden="true"></span>
           </div>
-          <div class="wiretap-row">
-            <span class="wiretap-label">HTTP Payload</span>
-            <code id="wiretapBytes" class="mono-item">0 bytes · 0 raw secrets verified</code>
+          <span class="note">Leak check before sending</span>
+        </li>
+        <li class="step-card" data-step="3">
+          <div class="step-head">
+            <span class="step-num">03</span>
+            <b>Ask</b>
+            <span class="step-indicator" aria-hidden="true"></span>
           </div>
-          <div class="wiretap-row">
-            <span class="wiretap-label">SHA-256 Proof</span>
-            <code id="wiretapHash" class="mono-item hash-val">--</code>
+          <span class="note">Cloud model, placeholders only</span>
+        </li>
+        <li class="step-card" data-step="4">
+          <div class="step-head">
+            <span class="step-num">04</span>
+            <b>Restore</b>
+            <span class="step-indicator" aria-hidden="true"></span>
           </div>
-          <details id="wiretapDetails" class="wiretap-details">
-            <summary>Inspect raw intercepted HTTP JSON bytes</summary>
-            <pre id="wiretapRaw" class="mono payload-json">Run Veil to capture the live Firebase AI Logic HTTP JSON request.</pre>
-          </details>
-        </div>
+          <span class="note">Real values back, on device</span>
+        </li>
+      </ol>
 
-        <div class="heading-row">
-          <h3>Privacy receipts <small>Firestore: counts only, never text</small></h3>
-          <button id="togglePayload" type="button" class="btn-sm" aria-expanded="false" aria-controls="payloadPanel">Verify Firestore zero-text payload</button>
-        </div>
-        <div id="payloadPanel" class="payload-panel" hidden>
-          <div class="payload-meta">
-            <span id="payloadPath" class="mono-item">Awaiting first run</span>
-            <span class="badge dev">0 text fields · firestore.rules enforced</span>
+      <!-- Floating Nightshift Obsidian Bento Grid -->
+      <div class="workspace-bento">
+        <!-- Left Primary Obsidian Card: Hybrid Shield Composer & Restored Result -->
+        <section class="obsidian-card composer-card">
+          <div class="card-head">
+            <div>
+              <h2>Private Input <span class="card-sub">Stays on this device</span></h2>
+            </div>
+            <span class="card-glyph" title="Local Shield Active" aria-hidden="true">
+              <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+                <path d="M10 2.5L4 5v4.5c0 3.7 2.55 6.95 6 7.95 3.45-1 6-4.25 6-7.95V5l-6-2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <path d="M7.5 10.2l1.7 1.7 3.5-3.6" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
           </div>
-          <pre id="payloadJson" class="mono payload-json"></pre>
+
+          <div id="presets" class="presets" role="group" aria-label="Industry presets"></div>
+
+          <div class="editor-shell">
+            <textarea id="input" spellcheck="false" aria-label="Sensitive text input"></textarea>
+          </div>
+
+          <div class="composer-controls">
+            <label class="select-wrap">
+              <span>Task</span>
+              <select id="task"></select>
+            </label>
+            <label class="check-pill">
+              <input type="checkbox" id="local" />
+              <span>Keep everything local</span>
+            </label>
+            <button id="run" type="button" class="btn-primary-pill">
+              <span>Run privately</span>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
+                <path d="M3.5 8h9M9 4.5L12.5 8 9 11.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+
+          <div id="degradeCallout" class="callout amber" role="status" hidden>
+            <div class="callout-title" id="degradeTitle">Gemini Nano is not downloaded yet in this browser</div>
+            <p class="callout-body" id="degradeBody"></p>
+            <div class="callout-actions">
+              <button id="approveRulesSend" type="button" class="btn-amber-pill">Approve Rules-Only Mask &amp; Send to Cloud</button>
+              <button id="keepLocalBtn" type="button" class="btn-glass-sm">Keep everything local</button>
+            </div>
+          </div>
+
+          <p id="error" class="error" role="alert"></p>
+
+          <div class="result-divider"></div>
+
+          <div class="card-head compact-head">
+            <h3>Restored Output <span id="restoredPill" class="restored-pill" hidden>Restored locally</span></h3>
+            <button id="copyResult" type="button" class="btn-glass-sm" disabled>Copy restored result</button>
+          </div>
+          <div id="out" class="out" aria-live="polite"></div>
+        </section>
+
+        <!-- Right Bento Column: Nightshift Waveform Telemetry + PII Vault + Outbound Preview -->
+        <div class="bento-side">
+          <!-- Nightshift-Signature Waveform Telemetry Card -->
+          <section class="obsidian-card waveform-card">
+            <div class="card-head">
+              <div>
+                <h2>Routing Telemetry</h2>
+                <p class="card-caption" id="telemetryCaption">On-device PII shield vs cloud reasoning signal</p>
+              </div>
+              <span class="badge dev" id="telemetryModeBadge">Local Shield</span>
+            </div>
+
+            <div id="waveformBars" class="waveform-bars" aria-hidden="true"></div>
+
+            <div class="waveform-legend">
+              <span><i class="leg-dot blue"></i>On-device mask</span>
+              <span><i class="leg-dot white"></i>Placeholder payload</span>
+              <span><i class="leg-dot green"></i>0 PII leaked</span>
+            </div>
+
+            <div class="waveform-footer">
+              <div class="open-metrics">
+                <div class="open-metric">
+                  <span class="open-num tabular" id="metricMaskedNum">0</span>
+                  <span class="open-lbl">Masked locally</span>
+                </div>
+                <div class="open-metric">
+                  <span class="open-num tabular green-num" id="metricLeakedNum">0</span>
+                  <span class="open-lbl">Bytes leaked</span>
+                </div>
+                <div class="open-metric">
+                  <span class="open-num tabular blue-num" id="metricLatencyNum">--</span>
+                  <span class="open-lbl">Device ms</span>
+                </div>
+              </div>
+              <button type="button" id="quickScanPlay" class="nightshift-play-btn" title="Run local PII scan & verify Leak Guard" aria-label="Run local PII scan">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor" aria-hidden="true">
+                  <path d="M6.5 4.5l9.5 5.5-9.5 5.5V4.5z" />
+                </svg>
+              </button>
+            </div>
+          </section>
+
+          <!-- Masked on Device Vault Card -->
+          <section class="obsidian-card vault-card">
+            <div class="card-head">
+              <div>
+                <h2>Masked on Device <span id="detectorBadge"></span></h2>
+                <p class="card-caption"><span id="planCount" class="tabular">0</span> values never leave this browser</p>
+              </div>
+              <span class="count-chip tabular" id="vaultCountChip">0</span>
+            </div>
+            <ul id="plan" class="plan"><li class="empty">Run to see what gets masked.</li></ul>
+          </section>
+
+          <!-- Outbound Placeholder Preview Card -->
+          <section class="obsidian-card preview-card">
+            <div class="card-head compact-head">
+              <h3>What the Cloud Sees <span id="reasonerBadge"></span></h3>
+              <button type="button" class="btn-glass-sm" data-jump-tab="routing">Inspect Diff</button>
+            </div>
+            <pre id="cloudSaw" class="mono compact-mono"></pre>
+          </section>
         </div>
-        <ul id="receipts" class="receipts"></ul>
-      </section>
-    </div>
-    <footer>Veil · Apache-2.0 · Firebase AI Logic hybrid inference, App Check, Auth, Remote Config, Firestore · <a href="https://github.com/wenizmohamed/veil">source</a></footer>
+      </div>
+    </main>
+
+    <!-- TAB 2: ROUTING (Hybrid Diff + Telemetry + Remote Config Policy) -->
+    <main class="tab-panel" data-panel="routing" hidden>
+      <div class="routing-bento">
+        <!-- Side-by-Side Redaction Diff Card (Spans 2 columns) -->
+        <section class="obsidian-card diff-card span-2">
+          <div class="card-head">
+            <div>
+              <h2>Live PII Redaction Diff Inspector</h2>
+              <p class="card-caption">Compare local device text against the placeholder-only wire payload sent to Firebase AI Logic</p>
+            </div>
+            <div class="diff-pills">
+              <span class="badge dev">Left: Local Browser Only</span>
+              <span class="badge cloud">Right: Outbound Placeholders</span>
+            </div>
+          </div>
+
+          <div class="diff-grid">
+            <div class="diff-col">
+              <div class="diff-col-head">
+                <span>Raw Local Text (Never Transmitted)</span>
+                <span class="mono-item tabular" id="diffRawChars">0 chars</span>
+              </div>
+              <div id="diffRawView" class="diff-surface"></div>
+            </div>
+            <div class="diff-col">
+              <div class="diff-col-head">
+                <span>Sanitized Wire Payload (Placeholders Only)</span>
+                <span class="mono-item tabular" id="diffMaskedChars">0 chars</span>
+              </div>
+              <div id="diffMaskedView" class="diff-surface mono-surface"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Cloud Response Card -->
+        <section class="obsidian-card">
+          <div class="card-head">
+            <div>
+              <h2>Cloud Placeholder Response</h2>
+              <p class="card-caption">Raw answer returned before local unmask restoration</p>
+            </div>
+            <span class="badge cloud" id="routingReasonerPill">Cloud Reasoner</span>
+          </div>
+          <pre id="cloudSaid" class="mono tall-mono">Run Veil from Workspace to inspect the cloud model placeholder response.</pre>
+        </section>
+
+        <!-- Category Distribution & Signal Card -->
+        <section class="obsidian-card">
+          <div class="card-head">
+            <div>
+              <h2>Detected Entity Breakdown</h2>
+              <p class="card-caption">Real-time on-device category telemetry across active text</p>
+            </div>
+            <span class="count-chip tabular" id="catTotalChip">0</span>
+          </div>
+          <div id="categoryBars" class="category-bars"></div>
+        </section>
+
+        <!-- Firebase Remote Config Policy Card -->
+        <section class="obsidian-card policy-card span-2">
+          <div class="card-head">
+            <div>
+              <h2>Firebase Remote Config Live Policy</h2>
+              <p class="card-caption">Dynamic governance rules fetched live via Firebase Remote Config SDK</p>
+            </div>
+            <span class="badge dev" id="rcSourceBadge">Remote Config</span>
+          </div>
+          <div class="policy-grid">
+            <div class="policy-stat">
+              <span class="policy-k">Cloud Reasoner Model</span>
+              <code class="policy-v mono-item" id="rcCloudModel">gemini-3.5-flash-lite</code>
+            </div>
+            <div class="policy-stat">
+              <span class="policy-k">Local Reasoning Policy</span>
+              <code class="policy-v mono-item" id="rcLocalAllowed">Allowed (On-Device Nano)</code>
+            </div>
+            <div class="policy-stat">
+              <span class="policy-k">Max Payload Limit</span>
+              <code class="policy-v mono-item tabular" id="rcMaxChars">6,000 chars</code>
+            </div>
+            <div class="policy-stat">
+              <span class="policy-k">Leak Guard Enforcement</span>
+              <code class="policy-v mono-item green-text">Strict Zero-Secret Gate</code>
+            </div>
+          </div>
+          <div class="policy-cats-wrap">
+            <span class="policy-k">Active Redaction Categories</span>
+            <div id="rcCategories" class="policy-cats"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- TAB 3: AUDIT (Outbound Wiretap SHA-256 + Firestore Zero-Text Receipts) -->
+    <main class="tab-panel" data-panel="audit" hidden>
+      <div class="audit-bento">
+        <!-- Outbound Wiretap & Cryptographic SHA-256 Proof -->
+        <section class="obsidian-card">
+          <div class="card-head">
+            <div>
+              <h2>Outbound Wiretap &amp; SHA-256 Proof</h2>
+              <p class="card-caption">Passive fetch interceptor verifying raw HTTP JSON bytes on the wire</p>
+            </div>
+            <span id="wiretapBadge" class="badge dev" hidden>0 raw secrets in HTTP bytes</span>
+          </div>
+
+          <div id="wiretapBox" class="wiretap-box">
+            <div class="wiretap-row">
+              <span class="wiretap-label">Endpoint</span>
+              <code id="wiretapEndpoint" class="mono-item">Awaiting outbound cloud call</code>
+            </div>
+            <div class="wiretap-row">
+              <span class="wiretap-label">HTTP Payload</span>
+              <code id="wiretapBytes" class="mono-item tabular">0 bytes · 0 raw secrets verified</code>
+            </div>
+            <div class="wiretap-row">
+              <span class="wiretap-label">SHA-256 Proof</span>
+              <code id="wiretapHash" class="mono-item hash-val">--</code>
+            </div>
+            <details id="wiretapDetails" class="wiretap-details">
+              <summary>Inspect raw intercepted HTTP JSON bytes</summary>
+              <pre id="wiretapRaw" class="mono payload-json">Run Veil to capture the live Firebase AI Logic HTTP JSON request.</pre>
+            </details>
+          </div>
+
+          <div class="card-actions-foot">
+            <button id="downloadCert" type="button" class="btn-primary-pill btn-sm-pill" disabled>Download Zero-Text Compliance Certificate (.json)</button>
+            <button type="button" id="auditStressBtn" class="btn-glass-sm">Run 12-Trap Adversarial Stress Test</button>
+          </div>
+        </section>
+
+        <!-- Firestore Zero-Text Receipts & Schema Verifier -->
+        <section class="obsidian-card">
+          <div class="card-head">
+            <div>
+              <h2>Firestore Privacy Receipts</h2>
+              <p class="card-caption">Counts and inference sources only, strictly enforced by firestore.rules</p>
+            </div>
+            <button id="togglePayload" type="button" class="btn-glass-sm" aria-expanded="false" aria-controls="payloadPanel">Verify zero-text payload</button>
+          </div>
+
+          <div id="payloadPanel" class="payload-panel" hidden>
+            <div class="payload-meta">
+              <span id="payloadPath" class="mono-item">Awaiting first run</span>
+              <span class="badge dev">0 text fields · firestore.rules enforced</span>
+            </div>
+            <pre id="payloadJson" class="mono payload-json"></pre>
+          </div>
+
+          <ul id="receipts" class="receipts"><li class="empty">No receipts yet. Run Veil to write a zero-text count receipt.</li></ul>
+        </section>
+      </div>
+    </main>
+
+    <!-- Floating Nightshift Bottom Quick-Mode Dock -->
+    <aside class="bottom-dock" aria-label="Quick privacy controls">
+      <div class="dock-capsule">
+        <button type="button" class="dock-btn active" id="dockHybridBtn" data-dock-mode="hybrid">
+          <span class="dock-dot blue" aria-hidden="true"></span>
+          <span>Hybrid Shield</span>
+        </button>
+        <button type="button" class="dock-btn" id="dockLocalBtn" data-dock-mode="local">
+          <span class="dock-dot green" aria-hidden="true"></span>
+          <span>Local-Only</span>
+        </button>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <button type="button" class="dock-btn" id="dockStressBtn">
+          <span>12-Trap Stress</span>
+        </button>
+        <button type="button" class="dock-btn" id="dockAuditBtn">
+          <span>SHA-256 Audit</span>
+        </button>
+      </div>
+    </aside>
+
+    <footer class="app-footer">
+      <span>Veil Private · Apache-2.0 · Firebase AI Logic Hybrid Inference, App Check, Auth, Remote Config, Firestore</span>
+      <a href="https://github.com/wenizmohamed/veil" target="_blank" rel="noreferrer">github.com/wenizmohamed/veil</a>
+    </footer>
   </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
