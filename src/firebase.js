@@ -19,7 +19,7 @@ if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
 initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
-const auth = getAuth(app);
+const auth = firebaseConfig.useFirebaseAuth ? getAuth(app) : null;
 const db = getFirestore(app);
 const rc = getRemoteConfig(app);
 rc.settings.minimumFetchIntervalMillis = 10 * 60 * 1000;
@@ -55,6 +55,9 @@ function getLocalSessionUid() {
 }
 
 export function signIn() {
+  if (!auth) {
+    return Promise.resolve({ uid: getLocalSessionUid(), anonymousSession: true });
+  }
   return new Promise((resolve) => {
     let settled = false;
     const done = (u) => { if (!settled) { settled = true; resolve(u); } };
