@@ -7,8 +7,8 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231b1a17'/%3E%3Cpath d='M8 9l8 15 8-15' fill='none' stroke='%2382c6a3' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="./assets/index-DCeH-p5R.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BNEuuR6C.css">
+  <script type="module" crossorigin src="./assets/index-B5IQlv_K.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B-FnVwNY.css">
 </head>
 <body>
   <div class="wrap">
@@ -26,13 +26,27 @@
     </ol>
 
     <div id="auditStrip" class="audit-strip" aria-live="polite">
-      <span class="audit-item" id="auditLeaks"><span class="dot ok"></span>0 secrets leaked</span>
-      <span class="audit-sep" aria-hidden="true">·</span>
-      <span class="audit-item" id="auditMasked">0 values masked</span>
-      <span class="audit-sep" aria-hidden="true">·</span>
-      <span class="audit-item" id="auditGuard">Leak Guard: <b>READY</b></span>
-      <span class="audit-sep" aria-hidden="true">·</span>
-      <span class="audit-item mono-item" id="auditLatency">On-device: -- ms · Cloud: -- ms</span>
+      <div class="audit-metrics">
+        <span class="audit-item" id="auditLeaks"><span class="dot ok"></span>0 secrets leaked</span>
+        <span class="audit-sep" aria-hidden="true">·</span>
+        <span class="audit-item" id="auditMasked">0 values masked</span>
+        <span class="audit-sep" aria-hidden="true">·</span>
+        <span class="audit-item" id="auditGuard">Leak Guard: <b>READY</b></span>
+        <span class="audit-sep" aria-hidden="true">·</span>
+        <span class="audit-item mono-item" id="auditLatency">On-device: -- ms · Cloud: -- ms</span>
+      </div>
+      <button id="runStressTest" type="button" class="btn-sm btn-stress">Run 12-Trap PII Stress Test</button>
+    </div>
+
+    <div id="stressPanel" class="stress-panel" hidden>
+      <div class="stress-head">
+        <div class="stress-title">
+          <span class="badge dev" id="stressSummary">12/12 Caught On-Device · 0 Bytes Leaked</span>
+          <span class="mono-item" id="stressMeta"></span>
+        </div>
+        <button id="closeStressPanel" type="button" class="btn-sm">Hide</button>
+      </div>
+      <div id="stressGrid" class="stress-grid"></div>
     </div>
 
     <div class="grid">
@@ -77,6 +91,29 @@
         <pre id="cloudSaw" class="mono"></pre>
         <h3>What the cloud answered</h3>
         <pre id="cloudSaid" class="mono"></pre>
+
+        <div class="heading-row">
+          <h3>Outbound wiretap &amp; SHA-256 proof <span id="wiretapBadge" class="badge dev" hidden>0 raw secrets in HTTP bytes</span></h3>
+          <button id="downloadCert" type="button" class="btn-sm" disabled>Download Zero-Text Compliance Certificate (.json)</button>
+        </div>
+        <div id="wiretapBox" class="wiretap-box">
+          <div class="wiretap-row">
+            <span class="wiretap-label">Endpoint</span>
+            <code id="wiretapEndpoint" class="mono-item">Awaiting outbound cloud call</code>
+          </div>
+          <div class="wiretap-row">
+            <span class="wiretap-label">HTTP Payload</span>
+            <code id="wiretapBytes" class="mono-item">0 bytes · 0 raw secrets verified</code>
+          </div>
+          <div class="wiretap-row">
+            <span class="wiretap-label">SHA-256 Proof</span>
+            <code id="wiretapHash" class="mono-item hash-val">--</code>
+          </div>
+          <details id="wiretapDetails" class="wiretap-details">
+            <summary>Inspect raw intercepted HTTP JSON bytes</summary>
+            <pre id="wiretapRaw" class="mono payload-json">Run Veil to capture the live Firebase AI Logic HTTP JSON request.</pre>
+          </details>
+        </div>
 
         <div class="heading-row">
           <h3>Privacy receipts <small>Firestore: counts only, never text</small></h3>

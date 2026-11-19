@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   detectWithRules, sanitizeModelSpans, buildPlan, mask, unmask, unmaskSegments,
-  tokenizeMaskedText, buildReceiptPayload, leakCheck, countByType, PRESETS, TASKS,
+  tokenizeMaskedText, buildReceiptPayload, verifyOutboundBytesZeroSecrets,
+  buildComplianceCertificate, runAdversarialStressTest,
+  leakCheck, countByType, PRESETS, TASKS,
 } from "../src/veil-core.js";
 
 const EMAIL = `Hi Sara Al Mansoori,
@@ -199,6 +201,68 @@ describe("visual token highlighting & Firestore zero-text payload", () => {
     const serialized = JSON.stringify(payload).toLowerCase();
     for (const entry of plan) {
       expect(serialized).not.toContain(entry.text.toLowerCase());
+    }
+  });
+});
+
+describe("12-trap adversarial PII stress test & wiretap cryptographic proof", () => {
+  it("catches and restores 12/12 adversarial PII traps on-device with 0 bytes leaked", () => {
+    const summary = runAdversarialStressTest();
+    expect(summary.total).toBe(12);
+    expect(summary.caught).toBe(12);
+    expect(summary.leaked).toBe(0);
+    expect(summary.restored).toBe(12);
+    for (const r of summary.results) {
+      expect(r.caught).toBe(true);
+      expect(r.leakedBytes).toBe(0);
+      expect(r.restored).toBe(true);
+    }
+  });
+
+  it("verifies raw outbound HTTP JSON bytes contain 0 secret substrings and flags leaks", () => {
+    const preset = PRESETS[0];
+    const plan = buildPlan(detectWithRules(preset.text));
+    const masked = mask(preset.text, plan);
+    const cleanHttpJson = JSON.stringify({ contents: [{ role: "user", parts: [{ text: masked }] }] });
+    const cleanRes = verifyOutboundBytesZeroSecrets(cleanHttpJson, plan);
+    expect(cleanRes.passed).toBe(true);
+    expect(cleanRes.leakedCount).toBe(0);
+    expect(cleanRes.bytes).toBeGreaterThan(50);
+
+    const dirtyHttpJson = JSON.stringify({ contents: [{ role: "user", parts: [{ text: masked + " AE07 0331 2345 6789 0123 456" }] }] });
+    const dirtyRes = verifyOutboundBytesZeroSecrets(dirtyHttpJson, plan);
+    expect(dirtyRes.passed).toBe(false);
+    expect(dirtyRes.leakedCount).toBe(1);
+  });
+
+  it("builds a zero-text compliance certificate bound to Firestore receipt path and SHA-256 digest", () => {
+    const preset = PRESETS[0];
+    const plan = buildPlan(detectWithRules(preset.text));
+    const masked = mask(preset.text, plan);
+    const receiptPayload = buildReceiptPayload({
+      task: "reply",
+      plan,
+      detectorSource: "rules_only",
+      reasonerSource: "in_cloud",
+      outboundChars: masked.length,
+      unknownTokensCount: 0,
+    });
+    const cert = buildComplianceCertificate({
+      firestorePath: "sessions/anon_test/receipts/abc123",
+      receiptPayload,
+      sha256Hex: "a".repeat(64),
+      outboundBytes: 420,
+      wiretapEndpoint: "firebasevertexai.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+      policySnapshot: { source: "remote", cloudModel: "gemini-3.5-flash-lite", categories: ["PERSON"], maxChars: 6000 },
+      stressTestSummary: runAdversarialStressTest(),
+    });
+    expect(cert.schema).toBe("veil.zero-text-compliance-certificate/v1");
+    expect(cert.firestoreReceiptPath).toBe("sessions/anon_test/receipts/abc123");
+    expect(cert.cryptographicProof.outboundPayloadDigest).toHaveLength(64);
+    expect(cert.adversarialStressTest.caughtOnDevice).toBe(12);
+    const json = JSON.stringify(cert).toLowerCase();
+    for (const entry of plan) {
+      expect(json).not.toContain(entry.text.toLowerCase());
     }
   });
 });

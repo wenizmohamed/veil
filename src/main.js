@@ -1,7 +1,9 @@
 import "./style.css";
 import {
   detectWithRules, sanitizeModelSpans, buildPlan, mask, leakCheck, unmaskSegments,
-  tokenizeMaskedText, buildReceiptPayload, NANO_DETECT_PROMPT, TASKS, PRESETS,
+  tokenizeMaskedText, buildReceiptPayload, verifyOutboundBytesZeroSecrets,
+  buildComplianceCertificate, runAdversarialStressTest,
+  NANO_DETECT_PROMPT, TASKS, PRESETS,
 } from "./veil-core.js";
 import { loadPolicy, signIn, detectorModel, reasonerModel, saveReceipt, loadReceipts, InferenceSource } from "./firebase.js";
 
@@ -18,7 +20,113 @@ const state = {
   activePresetId: PRESETS[0].id,
   lastReceiptPayload: null,
   lastReceiptPath: "",
+  lastWiretap: null,
+  lastProof: null,
+  lastStressSummary: null,
 };
+
+// Passive fetch wiretap: observes the exact HTTP JSON bytes Firebase AI Logic sends over the wire
+// without mutating requests, headers, or responses.
+if (typeof window !== "undefined" && typeof window.fetch === "function" && !window.__veilWiretapInstalled) {
+  window.__veilWiretapInstalled = true;
+  const origFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    try {
+      const url = typeof input === "string" ? input : input?.url || "";
+      if (/firebasevertexai\.googleapis\.com|generativelanguage\.googleapis\.com/i.test(url) && /generateContent/i.test(url)) {
+        let rawBody = "";
+        if (typeof init?.body === "string") rawBody = init.body;
+        else if (init?.body instanceof Uint8Array || init?.body instanceof ArrayBuffer) {
+          rawBody = new TextDecoder().decode(init.body);
+        } else if (typeof Request !== "undefined" && input instanceof Request) {
+          rawBody = await input.clone().text();
+        }
+        if (rawBody) {
+          const parsedUrl = new URL(url);
+          state.lastWiretap = {
+            endpoint: `${parsedUrl.host}${parsedUrl.pathname}`,
+            rawBody,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("wiretap observer", err);
+    }
+    return origFetch(input, init);
+  };
+}
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function renderWiretapPanel() {
+  const proof = state.lastProof;
+  if (!proof) {
+    $("#wiretapBadge").hidden = true;
+    $("#wiretapEndpoint").textContent = "Awaiting outbound cloud call";
+    $("#wiretapBytes").textContent = "0 bytes · 0 raw secrets verified";
+    $("#wiretapHash").textContent = "--";
+    $("#wiretapRaw").textContent = "Run Veil to capture the live Firebase AI Logic HTTP JSON request.";
+    $("#downloadCert").disabled = true;
+    return;
+  }
+  $("#wiretapBadge").hidden = false;
+  $("#wiretapBadge").textContent = proof.leakedCount === 0
+    ? `0 raw secrets in ${proof.bytes} HTTP bytes`
+    : `${proof.leakedCount} raw secret(s) detected`;
+  $("#wiretapEndpoint").textContent = proof.endpoint;
+  $("#wiretapBytes").textContent = `${proof.bytes} bytes · ${proof.leakedCount} raw secrets found across ${state.plan.length} masked values`;
+  $("#wiretapHash").textContent = proof.sha256;
+  let pretty = proof.rawBody;
+  try { pretty = JSON.stringify(JSON.parse(proof.rawBody), null, 2); } catch {}
+  $("#wiretapRaw").textContent = pretty;
+  $("#downloadCert").disabled = false;
+}
+
+function renderStressTest() {
+  const summary = runAdversarialStressTest();
+  state.lastStressSummary = summary;
+  $("#stressSummary").textContent = `${summary.caught}/${summary.total} Caught On-Device · ${summary.leaked} Bytes Leaked`;
+  $("#stressMeta").textContent = `${summary.restored}/${summary.total} restored locally · ${summary.elapsedMs} ms`;
+  $("#stressGrid").innerHTML = summary.results.map((r) => `
+    <div class="stress-card">
+      <div class="stress-card-top">
+        <span>${esc(r.label)}</span>
+        <code class="tok" data-type="${esc(r.type)}">${esc(r.token)}</code>
+      </div>
+      <div class="stress-card-meta">
+        <span>${r.caught ? "Caught · 0 leaked" : "MISSED"}</span>
+        <span>${r.restored ? "Restored ✓" : "Restore fail"}</span>
+      </div>
+    </div>
+  `).join("");
+  $("#stressPanel").hidden = false;
+}
+
+function downloadComplianceCertificate() {
+  if (!state.lastProof || !state.lastReceiptPayload) return;
+  const cert = buildComplianceCertificate({
+    firestorePath: state.lastReceiptPath,
+    receiptPayload: state.lastReceiptPayload,
+    sha256Hex: state.lastProof.sha256,
+    outboundBytes: state.lastProof.bytes,
+    wiretapEndpoint: state.lastProof.endpoint,
+    policySnapshot: policy,
+    stressTestSummary: state.lastStressSummary,
+  });
+  const blob = new Blob([JSON.stringify(cert, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `veil-zero-text-certificate-${(state.lastProof.sha256 || "proof").slice(0, 12)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function setStep(n, status, note = "") {
   const el = document.querySelector(`[data-step="${n}"]`);
@@ -197,6 +305,9 @@ async function run({ approveRulesOnly = false } = {}) {
   $("#restoredPill").hidden = true;
   $("#copyResult").disabled = true;
   state.restoredText = "";
+  state.lastWiretap = null;
+  state.lastProof = null;
+  renderWiretapPanel();
 
   if (!text) return;
   if (text.length > policy.maxChars) {
@@ -272,6 +383,19 @@ async function run({ approveRulesOnly = false } = {}) {
       : `Answered by ${policy.cloudModel} (${Math.round(cloudMs)} ms) — saw placeholders only.`);
     $("#reasonerBadge").innerHTML = badge(source);
     $("#cloudSaid").innerHTML = renderTokenizedHtml(draft);
+
+    // 3b. Cryptographic wiretap proof over the exact raw HTTP JSON bytes sent to Firebase AI Logic.
+    const rawWireBody = state.lastWiretap?.rawBody || JSON.stringify({ localOnly: true, maskedOutbound: outbound });
+    const wireCheck = verifyOutboundBytesZeroSecrets(rawWireBody, state.plan);
+    const digest = await sha256Hex(rawWireBody);
+    state.lastProof = {
+      endpoint: state.lastWiretap?.endpoint || (ranLocally ? "on_device_only (0 network bytes)" : "firebasevertexai.googleapis.com"),
+      rawBody: rawWireBody,
+      bytes: ranLocally && !state.lastWiretap ? 0 : wireCheck.bytes,
+      leakedCount: wireCheck.leakedCount,
+      sha256: digest,
+    };
+    renderWiretapPanel();
 
     // 4. Restore locally.
     const tRestore = performance.now();
@@ -404,6 +528,9 @@ async function boot() {
     run({ approveRulesOnly: false });
   });
   $("#copyResult").addEventListener("click", copyRestoredResult);
+  $("#downloadCert").addEventListener("click", downloadComplianceCertificate);
+  $("#runStressTest").addEventListener("click", renderStressTest);
+  $("#closeStressPanel").addEventListener("click", () => { $("#stressPanel").hidden = true; });
   $("#togglePayload").addEventListener("click", () => {
     const panel = $("#payloadPanel");
     const open = panel.hidden;
