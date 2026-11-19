@@ -1,34 +1,40 @@
 import "./style.css";
 import {
-  detectWithRules, sanitizeModelSpans, buildPlan, mask, leakCheck, unmask, countByType,
-  NANO_DETECT_PROMPT, TASKS,
+  detectWithRules, sanitizeModelSpans, buildPlan, mask, leakCheck, unmaskSegments,
+  tokenizeMaskedText, buildReceiptPayload, NANO_DETECT_PROMPT, TASKS, PRESETS,
 } from "./veil-core.js";
 import { loadPolicy, signIn, detectorModel, reasonerModel, saveReceipt, loadReceipts, InferenceSource } from "./firebase.js";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-const SAMPLE = `Hi Sara Al Mansoori,
-
-Following our call, Falcon Logistics agrees to the revised rate. Please wire AED 48,500 to IBAN AE07 0331 2345 6789 0123 456 before Thursday 3 December.
-
-The staging key for the tracking API is sk_demoNOTAREALKEY7Hq2Lyj9WDar, please rotate it after the migration.
-
-If anything changes, call me on +971 50 123 4567 or email omar.khalid@falconlogistics.ae.
-
-Best,
-Omar Khalid
-Head of Finance, Falcon Logistics`;
-
 let policy, user, detector, deviceReady = false;
 
-const state = { plan: [], masked: "", detectorSource: null };
+const state = {
+  plan: [],
+  masked: "",
+  detectorSource: null,
+  restoredText: "",
+  activePresetId: PRESETS[0].id,
+  lastReceiptPayload: null,
+  lastReceiptPath: "",
+};
 
 function setStep(n, status, note = "") {
   const el = document.querySelector(`[data-step="${n}"]`);
-  el.dataset.status = status;
+  if (!el) return;
+  if (status) el.dataset.status = status;
+  else delete el.dataset.status;
   el.querySelector(".note").textContent = note;
 }
+
+function resetSteps() {
+  setStep(1, "", "Gemini Nano, on device");
+  setStep(2, "", "Leak check before sending");
+  setStep(3, "", "Cloud model, placeholders only");
+  setStep(4, "", "Real values back, on device");
+}
+
 function badge(source) {
   return source === InferenceSource.ON_DEVICE || source === "on_device"
     ? `<span class="badge dev">On device · Gemini Nano</span>`
@@ -36,11 +42,103 @@ function badge(source) {
     : `<span class="badge cloud">In cloud · ${esc(policy.cloudModel)}</span>`;
 }
 
+function renderTokenizedHtml(text) {
+  return tokenizeMaskedText(text).map((seg) =>
+    seg.kind === "token"
+      ? `<span class="tok" data-type="${esc(seg.type)}">${esc(seg.token)}</span>`
+      : esc(seg.value)
+  ).join("");
+}
+
+function renderRestoredHtml(segments) {
+  return segments.map((seg) => {
+    if (seg.kind === "restored") {
+      return `<mark class="restored-val" data-type="${esc(seg.type)}" title="Restored locally from ${esc(seg.token)}">${esc(seg.value)}</mark>`;
+    }
+    if (seg.kind === "unknown") {
+      return `<span class="unknown-tok" title="Placeholder invented by model — left unguessed">${esc(seg.token)}</span>`;
+    }
+    return esc(seg.value).replace(/\n/g, "<br>");
+  }).join("");
+}
+
 function renderPlan() {
   $("#plan").innerHTML = state.plan.length
-    ? state.plan.map((e) => `<li><code>${esc(e.token)}</code><span>${esc(e.text)}</span><em>${e.source === "nano" ? "Nano" : "rule"}</em></li>`).join("")
+    ? state.plan.map((e) => `<li><code class="tok" data-type="${esc(e.type)}">${esc(e.token)}</code><span>${esc(e.text)}</span><em>${e.source === "nano" ? "Nano" : "rule"}</em></li>`).join("")
     : `<li class="empty">Nothing sensitive found.</li>`;
   $("#planCount").textContent = state.plan.length;
+}
+
+function updateAuditStrip({ status = "", leaked = 0, masked = 0, guard = "READY", deviceMs = null, cloudMs = null, localOnly = false } = {}) {
+  const strip = $("#auditStrip");
+  if (status) strip.dataset.state = status;
+  else delete strip.dataset.state;
+
+  const dotClass = status === "error" ? "err" : status === "warn" ? "warn" : "ok";
+  const leakLabel = leaked > 0 ? `${leaked} secret${leaked === 1 ? "" : "s"} blocked` : "0 secrets leaked";
+  $("#auditLeaks").innerHTML = `<span class="dot ${dotClass}"></span>${esc(leakLabel)}`;
+  $("#auditMasked").textContent = `${masked} value${masked === 1 ? "" : "s"} masked`;
+  $("#auditGuard").innerHTML = `Leak Guard: <b>${esc(guard)}</b>`;
+
+  const devStr = deviceMs === null ? "-- ms" : `${Math.round(deviceMs)} ms`;
+  const cloudStr = localOnly
+    ? "0 ms (local only)"
+    : cloudMs === null ? "-- ms" : `${Math.round(cloudMs)} ms`;
+  $("#auditLatency").textContent = `On-device: ${devStr} · Cloud: ${cloudStr}`;
+}
+
+function renderPayloadInspector() {
+  if (!state.lastReceiptPayload) {
+    $("#payloadPath").textContent = "Run Veil to inspect the live Firestore write";
+    $("#payloadJson").textContent = JSON.stringify({
+      task: "reply",
+      masked: 0,
+      counts: {},
+      detector: "on_device | rules_only",
+      reasoner: "in_cloud | on_device",
+      outboundChars: 0,
+      leakGuard: "pass",
+      unknownTokens: 0,
+      at: "serverTimestamp()",
+    }, null, 2);
+    return;
+  }
+  $("#payloadPath").textContent = state.lastReceiptPath || "Firestore receipt (counts only)";
+  $("#payloadJson").textContent = JSON.stringify(state.lastReceiptPayload, null, 2);
+}
+
+function showDegradeCallout(title, body, { showKeepLocal = true } = {}) {
+  $("#degradeTitle").textContent = title;
+  $("#degradeBody").textContent = body;
+  $("#keepLocalBtn").hidden = !showKeepLocal || !policy?.allowLocalReasoning;
+  $("#degradeCallout").hidden = false;
+}
+
+function hideDegradeCallout() {
+  $("#degradeCallout").hidden = true;
+}
+
+function renderPresets() {
+  $("#presets").innerHTML = PRESETS.map((p) =>
+    `<button type="button" class="preset-btn${p.id === state.activePresetId ? " active" : ""}" data-preset="${esc(p.id)}" aria-pressed="${p.id === state.activePresetId}">
+      <span>${esc(p.label)}</span><span class="preset-tag">${esc(p.industry)}</span>
+    </button>`
+  ).join("");
+}
+
+function selectPreset(id) {
+  const preset = PRESETS.find((p) => p.id === id);
+  if (!preset) return;
+  state.activePresetId = preset.id;
+  $("#input").value = preset.text;
+  if ($("#task").querySelector(`option[value="${preset.defaultTask}"]`)) {
+    $("#task").value = preset.defaultTask;
+  }
+  hideDegradeCallout();
+  $("#error").textContent = "";
+  resetSteps();
+  updateAuditStrip({ masked: 0, guard: "READY" });
+  renderPresets();
 }
 
 async function ensureDevice() {
@@ -65,8 +163,6 @@ function chunks(text, max) {
   return out;
 }
 
-let confirmRulesOnly = false;
-
 async function detect(text) {
   const rules = detectWithRules(text, policy.categories);
   let nano = [];
@@ -88,71 +184,146 @@ async function detect(text) {
   return [...nano, ...rules];
 }
 
-async function run() {
+async function run({ approveRulesOnly = false } = {}) {
   const text = $("#input").value.trim();
   const task = $("#task").value;
   const local = $("#local").checked;
-  $("#out").innerHTML = ""; $("#cloudSaw").textContent = ""; $("#error").textContent = "";
+
+  hideDegradeCallout();
+  $("#out").innerHTML = "";
+  $("#cloudSaw").innerHTML = "";
+  $("#cloudSaid").innerHTML = "";
+  $("#error").textContent = "";
+  $("#restoredPill").hidden = true;
+  $("#copyResult").disabled = true;
+  state.restoredText = "";
+
   if (!text) return;
-  if (text.length > policy.maxChars) { $("#error").textContent = `Text is over the ${policy.maxChars}-character limit set in Remote Config.`; return; }
+  if (text.length > policy.maxChars) {
+    $("#error").textContent = `Text is over the ${policy.maxChars}-character limit set in Remote Config.`;
+    return;
+  }
+
   $("#run").disabled = true;
+  resetSteps();
+
+  let deviceMs = 0;
+  let cloudMs = 0;
 
   try {
     // 1. Find secrets on the device.
-    setStep(1, "busy", "Gemini Nano is reading your text on this device…");
+    setStep(1, "busy", "Scanning text on this device…");
+    const t0 = performance.now();
     const spans = await detect(text);
     state.plan = buildPlan(spans);
     state.masked = mask(text, state.plan);
-    renderPlan();
-    setStep(1, "done", state.detectorSource === "rules_only"
-      ? "Gemini Nano is not available in this browser, so only the built-in rules ran. Nothing was sent anywhere."
-      : `${state.plan.length} values masked on this device.`);
-    $("#detectorBadge").innerHTML = badge(state.detectorSource);
+    deviceMs = performance.now() - t0;
 
-    if (state.detectorSource === "rules_only" && !local && !confirmRulesOnly) {
-      confirmRulesOnly = true;
-      setStep(2, "error", "Paused: names and companies were not checked.");
-      $("#error").textContent = "Gemini Nano isn't available here, so only emails, phones, IDs, accounts, amounts and keys were masked. Names and company names were NOT checked. Review the masked list, then press Run again to send anyway, or tick \"Keep everything local\".";
-      $("#run").textContent = "Send anyway";
+    renderPlan();
+    $("#detectorBadge").innerHTML = badge(state.detectorSource);
+    setStep(1, "done", state.detectorSource === "rules_only"
+      ? `${state.plan.length} values masked on device with built-in rules (Gemini Nano not downloaded).`
+      : `${state.plan.length} values masked on device with Gemini Nano + rules.`);
+
+    if (state.detectorSource === "rules_only" && !local && !approveRulesOnly) {
+      setStep(2, "warn", "Paused for review before anything leaves this browser.");
+      updateAuditStrip({ status: "warn", leaked: 0, masked: state.plan.length, guard: "PAUSED", deviceMs, cloudMs: 0 });
+      showDegradeCallout(
+        "Gemini Nano isn't downloaded yet in this browser",
+        `Built-in deterministic rules and name/company cues masked ${state.plan.length} values locally — nothing has been sent anywhere. Review the masked list on the right, then approve sending placeholders to ${policy.cloudModel} or keep everything local.`
+      );
       return;
     }
-    confirmRulesOnly = false; $("#run").textContent = "Run privately";
 
     // 2. Leak guard before anything leaves.
     const outbound = `${TASKS[task]}\n\n${state.masked}`;
     leakCheck(outbound, state.plan);
-    setStep(2, "done", "Leak guard passed: none of the masked values are in the request.");
-    $("#cloudSaw").textContent = outbound;
+    setStep(2, "done", "Leak guard passed: 0 masked values present in outbound request.");
+    $("#cloudSaw").innerHTML = renderTokenizedHtml(outbound);
+    updateAuditStrip({ status: "pass", leaked: 0, masked: state.plan.length, guard: "PASS", deviceMs, cloudMs: null, localOnly: local });
 
     // 3. Reason over masked text.
-    setStep(3, "busy", local ? "Working on this device…" : "Gemini in the cloud is working on the masked text…");
+    setStep(3, "busy", local ? "Working on this device…" : `Asking ${policy.cloudModel} on placeholders only…`);
+    const tCloud = performance.now();
     const reasoner = reasonerModel(policy, local);
-    const res = await reasoner.generateContent(outbound);
+    let res;
+    try {
+      res = await reasoner.generateContent(outbound);
+    } catch (reasonErr) {
+      if (local && state.detectorSource === "rules_only") {
+        setStep(3, "warn", "Local-only reasoning needs Chrome's Gemini Nano.");
+        updateAuditStrip({ status: "warn", leaked: 0, masked: state.plan.length, guard: "PASS", deviceMs, cloudMs: 0, localOnly: true });
+        showDegradeCallout(
+          "Local-only reasoning requires Gemini Nano",
+          `Your text stayed 100% in this browser (0 bytes sent). To answer fully offline, enable Chrome's Built-in AI Prompt API, or approve sending the ${state.plan.length} masked placeholders to ${policy.cloudModel} now.`,
+          { showKeepLocal: false }
+        );
+        return;
+      }
+      throw reasonErr;
+    }
+    cloudMs = performance.now() - tCloud;
+
     const source = res.response.inferenceSource || (local ? "on_device" : "in_cloud");
     const draft = res.response.text();
-    setStep(3, "done", local ? "Answered on this device." : "Answered by the cloud model. It only ever saw placeholders.");
+    const ranLocally = source === InferenceSource.ON_DEVICE || source === "on_device";
+    setStep(3, "done", ranLocally
+      ? `Answered on this device (${Math.round(cloudMs)} ms).`
+      : `Answered by ${policy.cloudModel} (${Math.round(cloudMs)} ms) — saw placeholders only.`);
     $("#reasonerBadge").innerHTML = badge(source);
-    $("#cloudSaid").textContent = draft;
+    $("#cloudSaid").innerHTML = renderTokenizedHtml(draft);
 
     // 4. Restore locally.
-    const { text: restored, unknownTokens } = unmask(draft, state.plan);
-    $("#out").innerHTML = esc(restored).replace(/\n/g, "<br>");
-    setStep(4, "done", unknownTokens.length
-      ? `Restored on this device. ${unknownTokens.length} placeholder(s) the model made up were left as is: ${unknownTokens.join(", ")}`
-      : "Real values restored on this device.");
+    const tRestore = performance.now();
+    const { text: restored, segments, unknownTokens, restoredCount } = unmaskSegments(draft, state.plan);
+    deviceMs += performance.now() - tRestore;
 
-    // 5. Receipt: counts and sources only.
+    state.restoredText = restored;
+    $("#out").innerHTML = renderRestoredHtml(segments);
+    $("#copyResult").disabled = !restored.length;
+    $("#restoredPill").textContent = restoredCount > 0
+      ? `Restored locally · ${restoredCount} value${restoredCount === 1 ? "" : "s"}`
+      : "Restored locally";
+    $("#restoredPill").hidden = false;
+
+    setStep(4, "done", unknownTokens.length
+      ? `Restored locally. ${unknownTokens.length} invented placeholder(s) left unguessed: ${unknownTokens.join(", ")}`
+      : `${restoredCount} real value${restoredCount === 1 ? "" : "s"} restored on this device.`);
+
+    updateAuditStrip({
+      status: "pass",
+      leaked: 0,
+      masked: state.plan.length,
+      guard: "PASS",
+      deviceMs,
+      cloudMs: ranLocally ? 0 : cloudMs,
+      localOnly: ranLocally,
+    });
+
+    // 5. Receipt: counts and sources only (strictly enforced by firestore.rules).
+    const payload = buildReceiptPayload({
+      task,
+      plan: state.plan,
+      detectorSource: state.detectorSource,
+      reasonerSource: ranLocally ? "on_device" : "in_cloud",
+      outboundChars: outbound.length,
+      unknownTokensCount: unknownTokens.length,
+    });
+    state.lastReceiptPayload = { ...payload, at: "serverTimestamp()" };
+    state.lastReceiptPath = "Saving to Firestore…";
+    renderPayloadInspector();
+
     if (user) {
-      await saveReceipt(user.uid, {
-        task, counts: countByType(state.plan), masked: state.plan.length,
-        detector: state.detectorSource === "rules_only" ? "rules_only" : "on_device",
-        reasoner: source === "on_device" ? "on_device" : "in_cloud",
-        outboundChars: outbound.length, leakGuard: "pass", unknownTokens: unknownTokens.length,
-      });
+      const docRef = await saveReceipt(user.uid, payload);
+      state.lastReceiptPath = docRef?.path || `Firestore doc ${docRef?.id || ""}`;
+      renderPayloadInspector();
       renderReceipts();
     }
   } catch (e) {
     console.error(e);
+    if (e.leaked) {
+      updateAuditStrip({ status: "error", leaked: e.leaked.length, masked: state.plan.length, guard: "BLOCKED", deviceMs, cloudMs: 0 });
+    }
     $("#error").textContent = e.leaked
       ? `${e.message} Nothing was sent.`
       : `Something went wrong: ${e.message}`;
@@ -160,6 +331,25 @@ async function run() {
   } finally {
     $("#run").disabled = false;
   }
+}
+
+async function copyRestoredResult() {
+  if (!state.restoredText) return;
+  const btn = $("#copyResult");
+  try {
+    await navigator.clipboard.writeText(state.restoredText);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = state.restoredText;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
+  btn.textContent = "Copied ✓";
+  setTimeout(() => { btn.textContent = "Copy restored result"; }, 1800);
 }
 
 async function renderReceipts() {
@@ -170,13 +360,58 @@ async function renderReceipts() {
       <span>${Object.entries(r.counts || {}).map(([k, v]) => `${esc(k)} ${v}`).join(" · ")}</span>
       <span class="src">${r.detector === "on_device" ? "detect: device" : "detect: rules"} → ${r.reasoner === "on_device" ? "answer: device" : "answer: cloud"} · ${r.outboundChars} chars out</span></li>`).join("")
       : `<li class="empty">No receipts yet.</li>`;
+    if (rows.length && !state.lastReceiptPayload) {
+      const latest = rows[0];
+      state.lastReceiptPayload = {
+        task: latest.task,
+        counts: latest.counts || {},
+        masked: latest.masked,
+        detector: latest.detector,
+        reasoner: latest.reasoner,
+        outboundChars: latest.outboundChars,
+        leakGuard: latest.leakGuard,
+        unknownTokens: latest.unknownTokens,
+        at: latest.at?.toDate ? latest.at.toDate().toISOString() : "serverTimestamp()",
+      };
+      state.lastReceiptPath = `Latest Firestore receipt (${latest.id})`;
+      renderPayloadInspector();
+    }
   } catch (e) { console.warn("receipts", e); }
 }
 
 async function boot() {
-  $("#input").value = SAMPLE;
   $("#task").innerHTML = Object.entries({ reply: "Draft a reply", summary: "Summarize", actions: "Extract action items", formal: "Make it formal", arabic: "Translate to Arabic" })
     .map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+  renderPresets();
+  selectPreset(PRESETS[0].id);
+  renderPayloadInspector();
+
+  $("#presets").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-preset]");
+    if (btn) selectPreset(btn.dataset.preset);
+  });
+  $("#input").addEventListener("input", () => {
+    hideDegradeCallout();
+    $("#error").textContent = "";
+  });
+  $("#run").addEventListener("click", () => run({ approveRulesOnly: false }));
+  $("#approveRulesSend").addEventListener("click", () => {
+    $("#local").checked = false;
+    run({ approveRulesOnly: true });
+  });
+  $("#keepLocalBtn").addEventListener("click", () => {
+    $("#local").checked = true;
+    run({ approveRulesOnly: false });
+  });
+  $("#copyResult").addEventListener("click", copyRestoredResult);
+  $("#togglePayload").addEventListener("click", () => {
+    const panel = $("#payloadPanel");
+    const open = panel.hidden;
+    panel.hidden = !open;
+    $("#togglePayload").setAttribute("aria-expanded", String(open));
+    renderPayloadInspector();
+  });
+
   policy = await loadPolicy();
   $("#policy").textContent = `Policy from Remote Config (${policy.source}): cloud model ${policy.cloudModel}, ${policy.categories.length} categories, ${policy.maxChars} char limit.`;
   if (!policy.allowLocalReasoning) { $("#local").checked = false; $("#local").disabled = true; }
@@ -185,8 +420,7 @@ async function boot() {
   const hasPromptApi = typeof self.LanguageModel !== "undefined";
   $("#device").innerHTML = hasPromptApi
     ? `<span class="badge dev">Gemini Nano API present</span> First run may download the model.`
-    : `<span class="badge rules">No on-device model in this browser</span> Veil still masks with its rules and never sends raw text.`;
-  $("#run").addEventListener("click", run);
+    : `<span class="badge rules">No on-device model in this browser</span> Veil masks locally with deterministic rules and pauses before any cloud call.`;
 }
 
 boot();

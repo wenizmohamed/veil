@@ -6,8 +6,8 @@
   <title>Veil: private AI with hybrid inference</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script type="module" crossorigin src="./assets/index-7tRdHG0l.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-D6H6oGMw.css">
+  <script type="module" crossorigin src="./assets/index-CxQ6H6ZZ.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BNEuuR6C.css">
 </head>
 <body>
   <div class="wrap">
@@ -24,17 +24,47 @@
       <li data-step="4"><b>4 · Restore</b><span class="note">Real values back, on device</span></li>
     </ol>
 
+    <div id="auditStrip" class="audit-strip" aria-live="polite">
+      <span class="audit-item" id="auditLeaks"><span class="dot ok"></span>0 secrets leaked</span>
+      <span class="audit-sep" aria-hidden="true">·</span>
+      <span class="audit-item" id="auditMasked">0 values masked</span>
+      <span class="audit-sep" aria-hidden="true">·</span>
+      <span class="audit-item" id="auditGuard">Leak Guard: <b>READY</b></span>
+      <span class="audit-sep" aria-hidden="true">·</span>
+      <span class="audit-item mono-item" id="auditLatency">On-device: -- ms · Cloud: -- ms</span>
+    </div>
+
     <div class="grid">
       <section>
-        <h2>Your text <small>stays here</small></h2>
+        <div class="heading-row top-heading">
+          <h2>Your text <small>stays here</small></h2>
+          <span class="preset-hint">Try an industry preset</span>
+        </div>
+        <div id="presets" class="presets" role="group" aria-label="Industry presets"></div>
         <textarea id="input" spellcheck="false"></textarea>
         <div class="row">
           <label>Task <select id="task"></select></label>
           <label class="check"><input type="checkbox" id="local" /> Keep everything local</label>
         </div>
-        <button id="run">Run privately</button>
+        <div class="actions-bar">
+          <button id="run" type="button">Run privately</button>
+        </div>
+
+        <div id="degradeCallout" class="callout amber" role="status" hidden>
+          <div class="callout-title" id="degradeTitle">Gemini Nano isn't downloaded yet in this browser</div>
+          <p class="callout-body" id="degradeBody"></p>
+          <div class="callout-actions">
+            <button id="approveRulesSend" type="button" class="btn-amber">Approve Rules-Only Mask &amp; Send to Cloud</button>
+            <button id="keepLocalBtn" type="button" class="btn-ghost">Keep everything local</button>
+          </div>
+        </div>
+
         <p id="error" class="error"></p>
-        <h3>Result <small>restored on your device</small></h3>
+
+        <div class="heading-row">
+          <h3>Result <span id="restoredPill" class="restored-pill" hidden>Restored locally</span></h3>
+          <button id="copyResult" type="button" class="btn-sm" disabled>Copy restored result</button>
+        </div>
         <div id="out" class="out"></div>
       </section>
 
@@ -46,11 +76,22 @@
         <pre id="cloudSaw" class="mono"></pre>
         <h3>What the cloud answered</h3>
         <pre id="cloudSaid" class="mono"></pre>
-        <h3>Privacy receipts <small>Firestore: counts only, never text</small></h3>
+
+        <div class="heading-row">
+          <h3>Privacy receipts <small>Firestore: counts only, never text</small></h3>
+          <button id="togglePayload" type="button" class="btn-sm" aria-expanded="false" aria-controls="payloadPanel">Verify Firestore zero-text payload</button>
+        </div>
+        <div id="payloadPanel" class="payload-panel" hidden>
+          <div class="payload-meta">
+            <span id="payloadPath" class="mono-item">Awaiting first run</span>
+            <span class="badge dev">0 text fields · firestore.rules enforced</span>
+          </div>
+          <pre id="payloadJson" class="mono payload-json"></pre>
+        </div>
         <ul id="receipts" class="receipts"></ul>
       </section>
     </div>
     <footer>Veil · Apache-2.0 · Firebase AI Logic hybrid inference, App Check, Auth, Remote Config, Firestore · <a href="https://github.com/wenizmohamed/veil">source</a></footer>
-  </div>
+  </div>
 </body>
 </html>

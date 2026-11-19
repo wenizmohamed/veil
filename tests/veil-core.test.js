@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { detectWithRules, sanitizeModelSpans, buildPlan, mask, unmask, leakCheck, countByType } from "../src/veil-core.js";
+import {
+  detectWithRules, sanitizeModelSpans, buildPlan, mask, unmask, unmaskSegments,
+  tokenizeMaskedText, buildReceiptPayload, leakCheck, countByType, PRESETS, TASKS,
+} from "../src/veil-core.js";
 
 const EMAIL = `Hi Sara Al Mansoori,
 Please wire AED 48,500 to IBAN AE07 0331 2345 6789 0123 456 before Thursday.
@@ -93,5 +96,109 @@ describe("whole-value masking", () => {
   });
   it("drops model spans shorter than three characters", () => {
     expect(sanitizeModelSpans("Wire to AE07 0331", [{ text: "AE", type: "ADDRESS" }])).toHaveLength(0);
+  });
+});
+
+describe("industry presets — zero leaks across Finance, Healthcare, Legal", () => {
+  const mustMaskByPreset = {
+    finance: [
+      "Sara Al Mansoori",
+      "Omar Khalid",
+      "Falcon Logistics",
+      "AED 48,500",
+      "AE07 0331 2345 6789 0123 456",
+      "3 December 2026",
+      "sk_demoNOTAREALKEY7Hq2Lyj9WDar",
+      "+971 50 123 4567",
+      "omar.khalid@falconlogistics.ae",
+    ],
+    healthcare: [
+      "Layla Al Nuaimi",
+      "784-1988-7654321-4",
+      "MRN-849201",
+      "+971 55 892 3410",
+      "layla.nuaimi@example.ae",
+      "Tariq Mansour",
+      "Al Noor Medical Center",
+      "18 November 2026",
+      "AED 1,850",
+    ],
+    legal: [
+      "Gulf Horizon Technologies LLC",
+      "Nadia Al Qasimi",
+      "nadia.qasimi@gulfhorizon.ae",
+      "Crescent Capital Partners",
+      "David Chen",
+      "d.chen@crescentcap.com",
+      "USD 14,500,000",
+      "AED 53,250,000",
+      "Emirates NBD Bank",
+      "AE46 0260 0010 1555 2890 101",
+      "1 December 2026",
+      "15 February 2027",
+      "rk_demoNOTAREALTOKEN9mK4xP2vQ8wR",
+    ],
+  };
+
+  it("ships all 3 enterprise industry presets with valid default tasks", () => {
+    expect(PRESETS.map((p) => p.id)).toEqual(["finance", "healthcare", "legal"]);
+    for (const preset of PRESETS) {
+      expect(TASKS[preset.defaultTask]).toBeTruthy();
+    }
+  });
+
+  for (const preset of PRESETS) {
+    it(`masks every sensitive entity in "${preset.label}" with 0 leaks`, () => {
+      const spans = detectWithRules(preset.text);
+      const plan = buildPlan(spans);
+      const masked = mask(preset.text, plan);
+      const outbound = `${TASKS[preset.defaultTask]}\n\n${masked}`;
+
+      expect(leakCheck(outbound, plan)).toBe(true);
+      for (const secret of mustMaskByPreset[preset.id]) {
+        expect(outbound.toLowerCase()).not.toContain(secret.toLowerCase());
+      }
+      // Round-trip restore puts every masked value back locally
+      const { text: restored, unknownTokens, restoredCount } = unmaskSegments(masked, plan);
+      expect(unknownTokens).toHaveLength(0);
+      expect(restoredCount).toBeGreaterThanOrEqual(mustMaskByPreset[preset.id].length);
+      for (const secret of mustMaskByPreset[preset.id]) {
+        expect(restored).toContain(secret);
+      }
+    });
+  }
+});
+
+describe("visual token highlighting & Firestore zero-text payload", () => {
+  it("tokenizes masked text into typed badges for UI highlighting", () => {
+    const segs = tokenizeMaskedText("Wire [MONEY_1] to [ACCOUNT_1] for [PERSON_1].");
+    const tokens = segs.filter((s) => s.kind === "token");
+    expect(tokens).toEqual([
+      { kind: "token", token: "[MONEY_1]", type: "MONEY" },
+      { kind: "token", token: "[ACCOUNT_1]", type: "ACCOUNT" },
+      { kind: "token", token: "[PERSON_1]", type: "PERSON" },
+    ]);
+  });
+
+  it("builds a strict zero-text Firestore receipt matching firestore.rules", () => {
+    const preset = PRESETS[0];
+    const plan = buildPlan(detectWithRules(preset.text));
+    const masked = mask(preset.text, plan);
+    const payload = buildReceiptPayload({
+      task: "reply",
+      plan,
+      detectorSource: "rules_only",
+      reasonerSource: "in_cloud",
+      outboundChars: masked.length,
+      unknownTokensCount: 0,
+    });
+    expect(Object.keys(payload).sort()).toEqual([
+      "counts", "detector", "leakGuard", "masked", "outboundChars", "reasoner", "task", "unknownTokens",
+    ]);
+    expect(payload.leakGuard).toBe("pass");
+    const serialized = JSON.stringify(payload).toLowerCase();
+    for (const entry of plan) {
+      expect(serialized).not.toContain(entry.text.toLowerCase());
+    }
   });
 });

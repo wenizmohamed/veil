@@ -23,13 +23,15 @@ The interesting part is that hybrid inference isn't used as a fallback switch. T
 
 ## Features
 
+- **Three one-click industry presets**: `UAE Finance Wire` (IBAN, API key, AED transfer), `Healthcare Clinic Intake` (patient name, Emirates ID, MRN, physician, billing), and `Legal M&A NDA` (counterparties, USD/AED valuation, escrow IBAN, data room token, exclusivity dates).
 - **Gemini Nano entity detection** with a JSON `responseConstraint` (people, organizations, emails, phones, addresses, IDs, accounts, amounts, secrets, dates). Spans the model invents or paraphrases are rejected: a value is only masked if it appears verbatim in the text.
-- **Deterministic safety net**: built-in rules for emails, phone numbers, IBANs, Luhn-valid card numbers, Emirates ID, US SSN, amounts in AED/USD/EUR/GBP/SAR, and API keys (Stripe, AWS, GitHub, JWT). Name cues (greetings, sign-offs, titles like Mr/Dr, company suffixes like LLC or Logistics) back up the model, because a small on-device model will sometimes miss a name, and masking too much is safer than leaking.
-- **Honest degradation**: if Gemini Nano isn't available, Veil masks with rules only and **pauses** before sending, telling you names and companies weren't checked. You can review, keep everything local, or send anyway.
-- **"What the cloud saw" panel**: the exact outgoing request, so you can verify nothing private left.
+- **Deterministic safety net**: built-in rules for emails, phone numbers, IBANs, Luhn-valid card numbers, Emirates ID, US SSN, medical/case IDs, amounts in AED/USD/EUR/GBP/SAR, dates, and API keys (Stripe, AWS, GitHub, JWT). Name cues (greetings, sign-offs, titles like Mr/Dr, labeled fields like Patient/Signatory, company suffixes like LLC, Medical Center, Logistics, Capital Partners) back up the model, because a small on-device model will sometimes miss a name, and masking too much is safer than leaking.
+- **Visual privacy boundary proof**: live Privacy Audit Strip (`0 secrets leaked · X values masked · Leak Guard: PASS · On-device / Cloud latency`), color-coded token pills (`[PERSON_1]`, `[ACCOUNT_1]`, `[SECRET_1]`, etc.) across the masked table and cloud panes, subtle green "Restored locally" inline highlights in the final answer, and 1-click **Copy restored result**.
+- **Smooth honest degradation**: if Gemini Nano isn't downloaded yet in the browser, Veil masks locally with deterministic rules and pauses with a calm amber callout offering **Approve Rules-Only Mask & Send to Cloud** alongside **Keep everything local**.
+- **"What the cloud saw" panel**: the exact outgoing request with color-coded tokens, so you can verify nothing private left.
 - **Inference badges** on every step from the SDK's `inferenceSource` (on device vs in cloud).
 - **Tasks**: draft a reply, summarize, extract action items, make it formal, translate to Arabic.
-- **Privacy receipts** in Firestore: per run, the counts per category and where each step ran. Never text, never values (enforced by security rules, not just by the client).
+- **Privacy receipts & Firestore payload inspector**: per run, counts per category and where each step ran — never text, never values (enforced by `firestore.rules`). Toggle **Verify Firestore zero-text payload** in the UI to inspect the exact JSON document written to Firestore.
 
 ## Firebase products used
 
