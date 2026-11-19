@@ -1,10 +1,14 @@
 # Veil
 
+[![Devpost Submission](https://img.shields.io/badge/Devpost-%23BuildHybridAI%202026-003E54?style=for-the-badge&logo=devpost&logoColor=white)](https://devpost.com/software/veil-s8zt3e)
+[![Live App](https://img.shields.io/badge/Live%20App-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://veil-team-auraa.vercel.app/)
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/eHMcEEeoXLA)
+
 **Use cloud AI on text you can't share.** Gemini Nano finds the private values in your text on your device and swaps them for placeholders. Gemini in the cloud works on the placeholders. Veil puts the real values back locally. The cloud never sees the names, account numbers, amounts or keys.
 
-Built for **#BuildHybridAI 2026** with **Firebase AI Logic hybrid inference** (Web / Chrome).
+Built for **#BuildHybridAI 2026** with **Firebase AI Logic hybrid inference** (Web / Chrome) - **[View & Like on Devpost](https://devpost.com/software/veil-s8zt3e)**.
 
-**Live app:** https://wenizmohamed.github.io/veil/
+**Live app:** https://veil-team-auraa.vercel.app/ (GitHub Pages mirror: https://wenizmohamed.github.io/veil/)
 
 ## The problem
 
