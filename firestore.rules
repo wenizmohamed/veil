@@ -3,22 +3,32 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // A receipt proves what happened without storing what was said:
     // counts per category and where each step ran. No free text is accepted.
+    function validReceipt(data) {
+      return data.keys().hasOnly(['at', 'task', 'counts', 'masked', 'detector', 'reasoner', 'outboundChars', 'leakGuard', 'unknownTokens'])
+        && data.task in ['reply', 'summary', 'actions', 'formal', 'arabic']
+        && data.counts is map
+        && data.counts.keys().hasOnly(['PERSON', 'ORG', 'EMAIL', 'PHONE', 'ADDRESS', 'ID', 'ACCOUNT', 'MONEY', 'SECRET', 'DATE'])
+        && data.masked is int
+        && data.detector in ['on_device', 'rules_only']
+        && data.reasoner in ['in_cloud', 'on_device']
+        && data.outboundChars is int
+        && data.leakGuard == 'pass'
+        && data.unknownTokens is int
+        && data.at == request.time;
+    }
+
     match /users/{uid}/receipts/{id} {
       allow read: if request.auth != null && request.auth.uid == uid;
-      allow create: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['at', 'task', 'counts', 'masked', 'detector', 'reasoner', 'outboundChars', 'leakGuard', 'unknownTokens'])
-        && request.resource.data.task in ['reply', 'summary', 'actions', 'formal', 'arabic']
-        && request.resource.data.counts is map
-        && request.resource.data.counts.keys().hasOnly(['PERSON', 'ORG', 'EMAIL', 'PHONE', 'ADDRESS', 'ID', 'ACCOUNT', 'MONEY', 'SECRET', 'DATE'])
-        && request.resource.data.masked is int
-        && request.resource.data.detector in ['on_device', 'rules_only']
-        && request.resource.data.reasoner in ['in_cloud', 'on_device']
-        && request.resource.data.outboundChars is int
-        && request.resource.data.leakGuard == 'pass'
-        && request.resource.data.unknownTokens is int
-        && request.resource.data.at == request.time;
+      allow create: if request.auth != null && request.auth.uid == uid && validReceipt(request.resource.data);
       allow update, delete: if false;
     }
+
+    match /sessions/{sid}/receipts/{id} {
+      allow read: if sid.matches('^anon_[0-9a-f-]{36}$');
+      allow create: if sid.matches('^anon_[0-9a-f-]{36}$') && validReceipt(request.resource.data);
+      allow update, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -43,10 +43,26 @@ export async function loadPolicy() {
   };
 }
 
+function getLocalSessionUid() {
+  const key = "veil_session_uid";
+  let id = localStorage.getItem(key);
+  if (!id || !/^anon_[0-9a-f-]{36}$/.test(id)) {
+    const uuid = (crypto.randomUUID ? crypto.randomUUID() : "00000000-0000-4000-8000-000000000000").toLowerCase();
+    id = `anon_${uuid}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
 export function signIn() {
-  return new Promise((resolve, reject) => {
-    const off = onAuthStateChanged(auth, (u) => { if (u) { off(); resolve(u); } });
-    signInAnonymously(auth).catch(reject);
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (u) => { if (!settled) { settled = true; resolve(u); } };
+    const off = onAuthStateChanged(auth, (u) => { if (u) { off(); done(u); } });
+    signInAnonymously(auth).catch(() => {
+      off();
+      done({ uid: getLocalSessionUid(), anonymousSession: true });
+    });
   });
 }
 
@@ -70,12 +86,17 @@ export function reasonerModel(policy, local) {
   });
 }
 
+function receiptCollection(uid) {
+  const root = /^anon_[0-9a-f-]{36}$/.test(uid) ? "sessions" : "users";
+  return collection(db, root, uid, "receipts");
+}
+
 /** Receipts hold counts and inference sources only. Never text, never values. Enforced again by firestore.rules. */
 export async function saveReceipt(uid, receipt) {
-  return addDoc(collection(db, "users", uid, "receipts"), { ...receipt, at: serverTimestamp() });
+  return addDoc(receiptCollection(uid), { ...receipt, at: serverTimestamp() });
 }
 
 export async function loadReceipts(uid) {
-  const snap = await getDocs(query(collection(db, "users", uid, "receipts"), orderBy("at", "desc"), limit(8)));
+  const snap = await getDocs(query(receiptCollection(uid), orderBy("at", "desc"), limit(8)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
