@@ -12,11 +12,17 @@ export { InferenceSource };
 
 const app = initializeApp(firebaseConfig);
 
-// App Check is required by Firebase AI Logic. On localhost a debug token is used (registered in the console).
-if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+// App Check (reCAPTCHA Enterprise) is initialized lazily on first cloud AI Logic call so
+// zero-network local previews, batch redactions, and rule audits never emit third-party beacons.
+let appCheckInitialized = false;
+export function ensureAppCheck() {
+  if (appCheckInitialized) return;
+  appCheckInitialized = true;
+  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  }
+  initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
 }
-initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });
 const auth = firebaseConfig.useFirebaseAuth ? getAuth(app) : null;
@@ -82,6 +88,7 @@ export function detectorModel() {
 
 /** The reasoner: works on masked text only. Cloud by default; on-device when the user picks "Keep everything local". */
 export function reasonerModel(policy, local) {
+  if (!local) ensureAppCheck();
   return getGenerativeModel(ai, {
     mode: local ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.ONLY_IN_CLOUD,
     inCloudParams: { model: policy.cloudModel, systemInstruction: CLOUD_SYSTEM, generationConfig: { temperature: 0.4 } },

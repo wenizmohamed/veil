@@ -3,17 +3,31 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // A receipt proves what happened without storing what was said:
     // counts per category and where each step ran. No free text is accepted.
+    function validCount(counts, key) {
+      return !(key in counts) || (counts[key] is int && counts[key] >= 0);
+    }
+
     function validReceipt(data) {
       return data.keys().hasOnly(['at', 'task', 'counts', 'masked', 'detector', 'reasoner', 'outboundChars', 'leakGuard', 'unknownTokens'])
         && data.task in ['reply', 'summary', 'actions', 'formal', 'arabic']
         && data.counts is map
         && data.counts.keys().hasOnly(['PERSON', 'ORG', 'EMAIL', 'PHONE', 'ADDRESS', 'ID', 'ACCOUNT', 'MONEY', 'SECRET', 'DATE'])
-        && data.masked is int
+        && validCount(data.counts, 'PERSON')
+        && validCount(data.counts, 'ORG')
+        && validCount(data.counts, 'EMAIL')
+        && validCount(data.counts, 'PHONE')
+        && validCount(data.counts, 'ADDRESS')
+        && validCount(data.counts, 'ID')
+        && validCount(data.counts, 'ACCOUNT')
+        && validCount(data.counts, 'MONEY')
+        && validCount(data.counts, 'SECRET')
+        && validCount(data.counts, 'DATE')
+        && data.masked is int && data.masked >= 0
         && data.detector in ['on_device', 'rules_only']
         && data.reasoner in ['in_cloud', 'on_device']
-        && data.outboundChars is int
+        && data.outboundChars is int && data.outboundChars >= 0
         && data.leakGuard == 'pass'
-        && data.unknownTokens is int
+        && data.unknownTokens is int && data.unknownTokens >= 0
         && data.at == request.time;
     }
 

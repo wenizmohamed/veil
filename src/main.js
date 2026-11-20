@@ -3,6 +3,9 @@ import {
   detectWithRules, sanitizeModelSpans, buildPlan, mask, leakCheck, unmaskSegments,
   tokenizeMaskedText, buildReceiptPayload, verifyOutboundBytesZeroSecrets,
   buildComplianceCertificate, runAdversarialStressTest, countByType,
+  computeTelemetrySplit, evaluateFirestoreRule, runAllFirestoreRuleTests,
+  runBatchRedactionQueue, buildBatchComplianceBundle,
+  FIRESTORE_RULES_SOURCE, FIRESTORE_ATTACK_VECTORS,
   NANO_DETECT_PROMPT, TASKS, PRESETS, CATEGORIES,
 } from "./veil-core.js";
 import { loadPolicy, signIn, detectorModel, reasonerModel, saveReceipt, loadReceipts, InferenceSource } from "./firebase.js";
@@ -34,6 +37,22 @@ const state = {
   lastStressSummary: null,
   lastDeviceMs: null,
   lastCloudMs: null,
+  lastFindMs: 0,
+  lastGuardMs: 0,
+  lastRestoreMs: 0,
+  lastLocalOnly: false,
+  batchDocs: PRESETS.map((p) => ({
+    id: p.id,
+    name: `${p.label}.txt`,
+    industry: p.industry,
+    task: p.defaultTask,
+    text: p.text,
+  })),
+  lastBatchResult: null,
+  lastBatchDigests: {},
+  lastBatchBundleSha256: null,
+  activeRuleVectorId: "raw_text_leak",
+  lastRulesSuite: null,
 };
 
 // Passive fetch wiretap: observes the exact HTTP JSON bytes Firebase AI Logic sends over the wire
@@ -255,6 +274,324 @@ function renderDiffViews(rawText, maskedText, plan) {
   if (maskedChars) maskedChars.textContent = `${maskedText.length} chars`;
 }
 
+function renderTelemetrySplitChart({ rawText, maskedText, plan, findMs, guardMs, cloudMs, restoreMs, localOnly }) {
+  const latHost = $("#latencyChartWrap");
+  const byteHost = $("#byteSplitChartWrap");
+  if (!latHost || !byteHost) return;
+
+  const t = computeTelemetrySplit({
+    rawText,
+    maskedText,
+    plan,
+    findMs,
+    guardMs,
+    cloudMs,
+    restoreMs,
+    localOnly,
+  });
+
+  const { latency, bytes } = t;
+  const maxStage = Math.max(latency.findMs, latency.guardMs, latency.cloudMs, latency.restoreMs, 1);
+  const stages = [
+    { label: "01 Find", sub: "On-Device", ms: latency.findMs, color: "#38bdf8" },
+    { label: "02 Guard", sub: "On-Device", ms: latency.guardMs, color: "#22c55e" },
+    { label: "03 Reason", sub: latency.localOnly ? "Local Only" : "Cloud", ms: latency.cloudMs, color: latency.localOnly ? "#38bdf8" : "#818cf8" },
+    { label: "04 Restore", sub: "On-Device", ms: latency.restoreMs, color: "#34d399" },
+  ];
+
+  const barMaxW = 265;
+  const stageRows = stages.map((s, idx) => {
+    const y = 14 + idx * 32;
+    const w = s.ms > 0 ? Math.max(10, Math.round((s.ms / maxStage) * barMaxW)) : 4;
+    const valStr = s.ms === 0 && idx === 2 ? (latency.localOnly ? "0 ms (local)" : "awaiting run") : `${s.ms.toFixed(1)} ms`;
+    return `
+      <text x="0" y="${y + 13}" fill="#d7dce5" font-size="11.5" font-family="JetBrains Mono, monospace">${esc(s.label)}</text>
+      <text x="78" y="${y + 13}" fill="#8a8f98" font-size="10.5" font-family="Instrument Sans, sans-serif">${esc(s.sub)}</text>
+      <rect x="148" y="${y + 2}" width="${barMaxW}" height="14" rx="7" fill="rgba(255,255,255,0.06)" />
+      <rect x="148" y="${y + 2}" width="${w}" height="14" rx="7" fill="${s.color}" opacity="${s.ms > 0 ? "0.92" : "0.35"}" />
+      <text x="${148 + barMaxW + 10}" y="${y + 13}" fill="#ffffff" font-size="11" font-family="JetBrains Mono, monospace">${esc(valStr)}</text>
+    `;
+  }).join("");
+
+  const totalBarW = 500;
+  const devBarW = Math.max(8, Math.round((latency.onDevicePct / 100) * totalBarW));
+  const cloudBarW = Math.max(0, totalBarW - devBarW);
+
+  latHost.innerHTML = `
+    <svg viewBox="0 0 520 182" width="100%" role="img" aria-label="Measured pipeline latency breakdown">
+      ${stageRows}
+      <text x="0" y="152" fill="#8a8f98" font-size="10.5" font-family="JetBrains Mono, monospace">TIME SPLIT: ON-DEVICE ${latency.onDevicePct}% (${latency.onDeviceTotalMs.toFixed(1)} ms) · CLOUD ${latency.cloudPct}% (${latency.cloudMs.toFixed(1)} ms)</text>
+      <rect x="0" y="160" width="${totalBarW}" height="10" rx="5" fill="rgba(255,255,255,0.07)" />
+      <rect x="0" y="160" width="${devBarW}" height="10" rx="5" fill="#22c55e" />
+      ${cloudBarW > 0 ? `<rect x="${devBarW}" y="160" width="${cloudBarW}" height="10" rx="5" fill="#818cf8" />` : ""}
+    </svg>
+  `;
+
+  const maxB = Math.max(bytes.rawBytes, bytes.outboundBytes, 1);
+  const byteRows = [
+    { label: "Raw Input", val: bytes.rawBytes, color: "#94a3b8", tag: `${bytes.rawBytes} B local` },
+    { label: "PII Shielded", val: bytes.secretBytesShielded, color: "#22c55e", tag: `${bytes.secretBytesShielded} B (${bytes.privacyShieldPct}%)` },
+    { label: "Wire Payload", val: bytes.outboundBytes, color: "#38bdf8", tag: `${bytes.outboundBytes} B tokens` },
+    { label: "PII on Wire", val: bytes.piiBytesOnWire, color: bytes.piiBytesOnWire === 0 ? "#22c55e" : "#ef4444", tag: `${bytes.piiBytesOnWire} B · ZERO LEAK` },
+  ];
+
+  const byteSvgRows = byteRows.map((r, idx) => {
+    const y = 12 + idx * 31;
+    const w = r.val > 0 ? Math.max(10, Math.round((r.val / maxB) * 250)) : 4;
+    return `
+      <text x="0" y="${y + 13}" fill="#d7dce5" font-size="11.5" font-family="JetBrains Mono, monospace">${esc(r.label)}</text>
+      <rect x="114" y="${y + 2}" width="250" height="14" rx="7" fill="rgba(255,255,255,0.06)" />
+      <rect x="114" y="${y + 2}" width="${w}" height="14" rx="7" fill="${r.color}" opacity="${r.val > 0 ? "0.92" : "0.5"}" />
+      <text x="374" y="${y + 13}" fill="${idx === 3 ? "#4ade80" : "#ffffff"}" font-size="11" font-family="JetBrains Mono, monospace">${esc(r.tag)}</text>
+    `;
+  }).join("");
+
+  byteHost.innerHTML = `
+    <svg viewBox="0 0 520 140" width="100%" role="img" aria-label="Privacy byte boundary and wire savings breakdown">
+      ${byteSvgRows}
+    </svg>
+  `;
+
+  const deltaSign = bytes.byteDelta > 0 ? `-${bytes.byteDelta} B saved` : bytes.byteDelta < 0 ? `+${Math.abs(bytes.byteDelta)} B token pad` : "0 B neutral";
+  $("#telemetryLatencyTotal").textContent = `On-device: ${latency.onDeviceTotalMs.toFixed(1)} ms · Cloud: ${latency.cloudMs > 0 ? `${latency.cloudMs.toFixed(1)} ms` : latency.localOnly ? "0 ms (local)" : "idle"}`;
+  $("#telemetryByteHeadline").textContent = `${bytes.secretBytesShielded} B PII shielded · ${deltaSign}`;
+  $("#telemetrySplitBadge").textContent = latency.cloudMs > 0
+    ? `Hybrid · ${latency.onDeviceTotalMs.toFixed(1)} ms Device vs ${latency.cloudMs.toFixed(1)} ms Cloud`
+    : `On-Device Shield · ${bytes.secretBytesShielded} B PII Kept Local`;
+  $("#kpiSecretBytes").textContent = `${bytes.secretBytesShielded} B`;
+  $("#kpiByteDelta").textContent = deltaSign;
+  $("#kpiShieldPct").textContent = `${bytes.privacyShieldPct}%`;
+}
+
+// =========================================================================
+// BATCH MULTI-DOCUMENT REDACTION QUEUE UI
+// =========================================================================
+
+function renderBatchQueueList() {
+  const listEl = $("#batchList");
+  if (!listEl) return;
+  const resultMap = new Map((state.lastBatchResult?.documents || []).map((d) => [d.id, d]));
+
+  if (!state.batchDocs.length) {
+    listEl.innerHTML = `<li class="empty">Queue empty. Drop files or click "Load 3 Enterprise Docs".</li>`;
+    $("#batchStatusBadge").textContent = "0 Docs Queued";
+    $("#batchSummaryBar").hidden = true;
+    $("#batchDownloadBtn").disabled = true;
+    return;
+  }
+
+  listEl.innerHTML = state.batchDocs.map((doc, idx) => {
+    const res = resultMap.get(doc.id);
+    const digest = state.lastBatchDigests[doc.id];
+    const statusHtml = res
+      ? `<span class="badge dev">${res.maskedCount} masked · ${res.leakedBytes} leaked · ${res.elapsedMs} ms</span>`
+      : `<span class="badge rules">Queued · ${doc.text.length} chars</span>`;
+    const metaHtml = res
+      ? `<span class="mono-item tabular">${res.rawBytes} B -> ${res.outboundBytes} B (${res.secretBytesShielded} B PII local) · SHA256:${esc((digest || "").slice(0, 12))}</span>`
+      : `<span class="mono-item">${esc(doc.industry)} · task: ${esc(doc.task)}</span>`;
+    return `
+      <li class="batch-row${res?.leakGuardPassed ? " is-verified" : ""}" data-batch-id="${esc(doc.id)}">
+        <div class="batch-row-main">
+          <span class="step-num">0${idx + 1}</span>
+          <strong class="batch-doc-name">${esc(doc.name)}</strong>
+          <span class="preset-tag">${esc(doc.industry)}</span>
+        </div>
+        <div class="batch-row-meta">
+          ${metaHtml}
+          ${statusHtml}
+        </div>
+      </li>
+    `;
+  }).join("");
+
+  if (state.lastBatchResult) {
+    const b = state.lastBatchResult;
+    $("#batchStatusBadge").className = b.allZeroLeak ? "badge dev" : "badge rules";
+    $("#batchStatusBadge").textContent = `${b.passedDocs}/${b.totalDocs} Zero-Leak Verified`;
+    $("#batchKpiDocs").textContent = `${b.passedDocs}/${b.totalDocs}`;
+    $("#batchKpiMasked").textContent = String(b.totalMasked);
+    $("#batchKpiLeaked").textContent = `${b.totalLeaked} B`;
+    $("#batchKpiShielded").textContent = `${b.totalSecretBytesShielded} B (${b.aggregateShieldPct}%)`;
+    $("#batchBundleHash").textContent = state.lastBatchBundleSha256 || "--";
+    $("#batchElapsed").textContent = `${b.elapsedMs} ms total`;
+    $("#batchSummaryBar").hidden = false;
+    $("#batchDownloadBtn").disabled = false;
+  } else {
+    $("#batchStatusBadge").className = "badge dev";
+    $("#batchStatusBadge").textContent = `${state.batchDocs.length} Docs Queued`;
+    $("#batchSummaryBar").hidden = true;
+    $("#batchDownloadBtn").disabled = true;
+  }
+}
+
+async function runBatchQueueUI() {
+  if (!state.batchDocs.length) return;
+  const btn = $("#batchRunBtn");
+  btn.disabled = true;
+  btn.textContent = "Redacting...";
+  try {
+    const summary = runBatchRedactionQueue(state.batchDocs, policy.categories);
+    const digests = {};
+    for (const d of summary.documents) {
+      digests[d.id] = await sha256Hex(d.outbound);
+    }
+    const concatDigests = summary.documents.map((d) => `${d.id}:${digests[d.id]}:${d.maskedCount}`).join("|");
+    const bundleSha256 = await sha256Hex(concatDigests);
+    state.lastBatchResult = summary;
+    state.lastBatchDigests = digests;
+    state.lastBatchBundleSha256 = bundleSha256;
+    renderBatchQueueList();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run Batch Queue";
+  }
+}
+
+async function ingestBatchFiles(fileList) {
+  const files = Array.from(fileList || []).slice(0, 8);
+  if (!files.length) return;
+  const loaded = [];
+  for (const f of files) {
+    const txt = await f.text();
+    if (!txt.trim()) continue;
+    loaded.push({
+      id: `upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: f.name,
+      industry: "Uploaded",
+      task: "summary",
+      text: txt.slice(0, policy.maxChars),
+    });
+  }
+  if (!loaded.length) return;
+  state.batchDocs = loaded;
+  state.lastBatchResult = null;
+  state.lastBatchDigests = {};
+  state.lastBatchBundleSha256 = null;
+  $("#batchDropLabel").textContent = `Loaded ${loaded.length} custom file${loaded.length === 1 ? "" : "s"} into local redaction queue`;
+  renderBatchQueueList();
+}
+
+function downloadBatchBundle() {
+  if (!state.lastBatchResult) return;
+  const bundle = buildBatchComplianceBundle({
+    batchSummary: state.lastBatchResult,
+    docDigests: state.lastBatchDigests,
+    bundleSha256: state.lastBatchBundleSha256,
+    policySnapshot: policy,
+    rulesTestSummary: state.lastRulesSuite,
+  });
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `veil-batch-compliance-bundle-${(state.lastBatchBundleSha256 || "zero-leak").slice(0, 12)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// =========================================================================
+// LIVE FIRESTORE ZERO-TEXT SECURITY RULES TESTER UI
+// =========================================================================
+
+function renderFirestoreRulesCode(evaluation) {
+  const host = $("#firestoreRulesCode");
+  if (!host) return;
+  const failedLines = new Set((evaluation?.failedChecks || []).map((c) => c.line));
+  const passedLines = new Set((evaluation?.passedChecks || []).map((c) => c.line));
+  const lines = FIRESTORE_RULES_SOURCE.split("\n");
+
+  host.innerHTML = lines.map((lineText, idx) => {
+    const num = idx + 1;
+    const isFail = failedLines.has(num);
+    const isPass = !isFail && passedLines.has(num);
+    const cls = isFail ? "rule-line fail" : isPass ? "rule-line pass" : "rule-line";
+    const tag = isFail ? `<span class="rule-tag fail">DENY</span>` : isPass ? `<span class="rule-tag pass">OK</span>` : "";
+    return `<div class="${cls}"><span class="rule-ln tabular">${String(num).padStart(2, "0")}</span><code>${esc(lineText) || " "}</code>${tag}</div>`;
+  }).join("");
+}
+
+function renderRuleEvaluation(evaluation) {
+  const box = $("#rulesVerdictBox");
+  if (!box || !evaluation) return;
+  $("#rulesMatchedBlock").textContent = evaluation.matchedRuleBlock;
+  const isAllow = evaluation.allowed;
+  const checksHtml = isAllow
+    ? evaluation.passedChecks.slice(0, 6).map((c) => `<li class="verdict-item pass">Line ${c.line}: <code>${esc(c.rule)}</code></li>`).join("")
+    : evaluation.failedChecks.map((c) => `<li class="verdict-item fail">Line ${c.line}: ${esc(c.reason)}</li>`).join("");
+
+  box.className = `rules-verdict-box ${isAllow ? "allow" : "deny"}`;
+  box.innerHTML = `
+    <div class="verdict-head">
+      <span class="verdict-pill ${isAllow ? "allow" : "deny"}">${esc(evaluation.decision)}</span>
+      <strong class="verdict-summary">${esc(evaluation.summary)}</strong>
+    </div>
+    <ul class="verdict-list">${checksHtml}</ul>
+  `;
+  renderFirestoreRulesCode(evaluation);
+}
+
+function renderRuleVectorPills() {
+  const host = $("#rulesVectorPills");
+  if (!host) return;
+  const suiteMap = new Map((state.lastRulesSuite?.results || []).map((r) => [r.id, r]));
+  host.innerHTML = FIRESTORE_ATTACK_VECTORS.map((v) => {
+    const res = suiteMap.get(v.id);
+    const dec = res ? res.evaluation.decision : v.expected;
+    const isActive = v.id === state.activeRuleVectorId;
+    return `
+      <button type="button" class="rule-vec-btn${isActive ? " active" : ""}" data-rule-vec="${esc(v.id)}" aria-pressed="${isActive}">
+        <span class="vec-tag ${dec === "ALLOW" ? "allow" : "deny"}">${esc(dec)}</span>
+        <span>${esc(v.label)}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function selectRuleVector(vectorId) {
+  const vec = FIRESTORE_ATTACK_VECTORS.find((v) => v.id === vectorId);
+  if (!vec) return;
+  state.activeRuleVectorId = vec.id;
+  $("#rulesOpSelect").value = vec.operation;
+  $("#rulesPathInput").value = vec.path;
+  $("#rulesPayloadInput").value = JSON.stringify(vec.data, null, 2);
+  $("#rulesActiveDesc").textContent = vec.description;
+  renderRuleVectorPills();
+  evaluateCustomRuleUI();
+}
+
+function evaluateCustomRuleUI() {
+  const op = $("#rulesOpSelect").value;
+  const path = $("#rulesPathInput").value.trim();
+  const rawJson = $("#rulesPayloadInput").value.trim();
+  let parsed;
+  try {
+    parsed = rawJson ? JSON.parse(rawJson) : {};
+  } catch (err) {
+    renderRuleEvaluation({
+      allowed: false,
+      decision: "DENY",
+      matchedRuleBlock: "JSON parse error",
+      passedChecks: [],
+      failedChecks: [{ line: 11, rule: "validReceipt(request.resource.data)", reason: `Invalid JSON payload: ${err.message}` }],
+      summary: `Invalid JSON payload: ${err.message}`,
+    });
+    return;
+  }
+  const ev = evaluateFirestoreRule({ path, operation: op, data: parsed });
+  renderRuleEvaluation(ev);
+}
+
+function runAllRulesUI() {
+  const suite = runAllFirestoreRuleTests();
+  state.lastRulesSuite = suite;
+  $("#rulesSummaryBadge").className = suite.allPassed ? "badge dev tabular" : "badge rules tabular";
+  $("#rulesSummaryBadge").textContent = `${suite.adversarialBlocked}/${suite.adversarialTotal} Leaks Denied · ${suite.cleanAllowed}/1 Clean Allowed`;
+  renderRuleVectorPills();
+  selectRuleVector(state.activeRuleVectorId);
+}
+
 // Instant zero-network local preview so judges immediately see real PII detection & diff on load
 function previewLocalShield() {
   const text = $("#input").value.trim();
@@ -262,15 +599,40 @@ function previewLocalShield() {
   const spans = detectWithRules(text, policy.categories);
   const plan = buildPlan(spans);
   const masked = mask(text, plan);
-  const scanMs = Math.max(1, Math.round(performance.now() - t0));
+  const findMs = Math.max(0.2, performance.now() - t0);
+
+  const tGuard0 = performance.now();
+  try { leakCheck(masked, plan); } catch {}
+  const guardMs = Math.max(0.1, performance.now() - tGuard0);
+
+  const tRestore0 = performance.now();
+  unmaskSegments(masked, plan);
+  const restoreMs = Math.max(0.1, performance.now() - tRestore0);
+
+  const scanMs = Math.max(1, Math.round(findMs + guardMs + restoreMs));
 
   state.plan = plan;
   state.masked = masked;
   state.lastDeviceMs = scanMs;
+  state.lastFindMs = findMs;
+  state.lastGuardMs = guardMs;
+  state.lastCloudMs = 0;
+  state.lastRestoreMs = restoreMs;
+  state.lastLocalOnly = $("#local").checked;
 
   renderPlan();
   renderCategoryBreakdown(plan);
   renderDiffViews(text, masked, plan);
+  renderTelemetrySplitChart({
+    rawText: text,
+    maskedText: masked,
+    plan,
+    findMs,
+    guardMs,
+    cloudMs: 0,
+    restoreMs,
+    localOnly: $("#local").checked,
+  });
   $("#cloudSaw").innerHTML = renderTokenizedHtml(masked);
   $("#detectorBadge").innerHTML = `<span class="badge dev">Local Preview · 0 Bytes Sent</span>`;
   $("#metricMaskedNum").textContent = String(plan.length);
@@ -557,6 +919,9 @@ async function run({ approveRulesOnly = false } = {}) {
   updateStatusCapsule({ label: "Scanning On-Device...", chip: "Step 1/4", dot: "busy" });
 
   let deviceMs = 0;
+  let findMs = 0;
+  let guardMs = 0;
+  let restoreMs = 0;
   let cloudMs = 0;
 
   try {
@@ -566,11 +931,22 @@ async function run({ approveRulesOnly = false } = {}) {
     const spans = await detect(text);
     state.plan = buildPlan(spans);
     state.masked = mask(text, state.plan);
-    deviceMs = performance.now() - t0;
+    findMs = Math.max(0.2, performance.now() - t0);
+    deviceMs = findMs;
 
     renderPlan();
     renderCategoryBreakdown(state.plan);
     renderDiffViews(text, state.masked, state.plan);
+    renderTelemetrySplitChart({
+      rawText: text,
+      maskedText: state.masked,
+      plan: state.plan,
+      findMs,
+      guardMs: 0,
+      cloudMs: 0,
+      restoreMs: 0,
+      localOnly: local,
+    });
     $("#metricMaskedNum").textContent = String(state.plan.length);
     $("#metricLatencyNum").textContent = String(Math.max(1, Math.round(deviceMs)));
     $("#detectorBadge").innerHTML = badge(state.detectorSource);
@@ -595,8 +971,11 @@ async function run({ approveRulesOnly = false } = {}) {
     }
 
     // 2. Leak guard before anything leaves.
+    const tGuard0 = performance.now();
     const outbound = `${TASKS[task]}\n\n${state.masked}`;
     leakCheck(outbound, state.plan);
+    guardMs = Math.max(0.1, performance.now() - tGuard0);
+    deviceMs += guardMs;
     setStep(2, "done", "Leak guard passed: 0 masked values present in outbound request.");
     $("#cloudSaw").innerHTML = renderTokenizedHtml(outbound);
     renderDiffViews(text, outbound, state.plan);
@@ -656,7 +1035,24 @@ async function run({ approveRulesOnly = false } = {}) {
     // 4. Restore locally.
     const tRestore = performance.now();
     const { text: restored, segments, unknownTokens, restoredCount } = unmaskSegments(draft, state.plan);
-    deviceMs += performance.now() - tRestore;
+    restoreMs = Math.max(0.1, performance.now() - tRestore);
+    deviceMs += restoreMs;
+
+    state.lastFindMs = findMs;
+    state.lastGuardMs = guardMs;
+    state.lastCloudMs = ranLocally ? 0 : cloudMs;
+    state.lastRestoreMs = restoreMs;
+    state.lastLocalOnly = ranLocally;
+    renderTelemetrySplitChart({
+      rawText: text,
+      maskedText: outbound,
+      plan: state.plan,
+      findMs,
+      guardMs,
+      cloudMs: ranLocally ? 0 : cloudMs,
+      restoreMs,
+      localOnly: ranLocally,
+    });
 
     state.restoredText = restored;
     $("#out").innerHTML = renderRestoredHtml(segments);
@@ -786,6 +1182,58 @@ async function boot() {
   renderPolicyCard();
   selectPreset(PRESETS[0].id);
   renderPayloadInspector();
+  renderBatchQueueList();
+  runAllRulesUI();
+
+  // Batch Multi-Document Redaction Queue controls
+  $("#batchLoadPresets").addEventListener("click", () => {
+    state.batchDocs = PRESETS.map((p) => ({
+      id: p.id,
+      name: `${p.label}.txt`,
+      industry: p.industry,
+      task: p.defaultTask,
+      text: p.text,
+    }));
+    state.lastBatchResult = null;
+    state.lastBatchDigests = {};
+    state.lastBatchBundleSha256 = null;
+    $("#batchDropLabel").textContent = "Loaded 3 enterprise documents (Finance + Healthcare + Legal) into local queue";
+    renderBatchQueueList();
+  });
+  $("#batchRunBtn").addEventListener("click", runBatchQueueUI);
+  $("#batchDownloadBtn").addEventListener("click", downloadBatchBundle);
+  $("#batchFileInput").addEventListener("change", (ev) => {
+    ingestBatchFiles(ev.target.files);
+    ev.target.value = "";
+  });
+  const dropzone = $("#batchDropzone");
+  dropzone.addEventListener("click", () => $("#batchFileInput").click());
+  dropzone.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      $("#batchFileInput").click();
+    }
+  });
+  dropzone.addEventListener("dragover", (ev) => {
+    ev.preventDefault();
+    dropzone.classList.add("is-dragover");
+  });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-dragover"));
+  dropzone.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    dropzone.classList.remove("is-dragover");
+    ingestBatchFiles(ev.dataTransfer?.files);
+  });
+
+  // Live Firestore Zero-Text Security Rules Tester controls
+  $("#rulesVectorPills").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-rule-vec]");
+    if (btn) selectRuleVector(btn.dataset.ruleVec);
+  });
+  $("#runAllRulesBtn").addEventListener("click", runAllRulesUI);
+  $("#testCustomRuleBtn").addEventListener("click", evaluateCustomRuleUI);
+  $("#rulesOpSelect").addEventListener("change", evaluateCustomRuleUI);
+  $("#rulesPathInput").addEventListener("input", evaluateCustomRuleUI);
 
   // Segmented tabs + jump buttons
   $$(".seg-tab").forEach((btn) => {
