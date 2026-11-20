@@ -162,18 +162,24 @@ body {
   z-index: 10;
   max-width: 1320px;
   margin: 0 auto;
-  padding: 16px 24px 42px;
+  padding: 0 24px 42px;
 }
 
 .topbar {
   position: sticky;
-  top: 12px;
-  z-index: 30;
+  top: 0;
+  z-index: 40;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 14px;
+  padding: 12px 16px;
   margin-bottom: 16px;
+  border-radius: 0 0 20px 20px;
+  background: #090f1d;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-top: 0;
+  box-shadow: 0 18px 40px -10px rgba(0, 0, 0, 0.88);
 }
 
 .topbar-left {
@@ -194,10 +200,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: var(--surface-glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-capsule);
   color: var(--ink);
@@ -210,8 +214,8 @@ body {
 }
 
 .brand-pill:hover {
-  background: var(--surface-glass-hover);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(26, 35, 52, 0.96);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .brand-mark {
@@ -301,8 +305,8 @@ body {
 }
 
 .pill-action:hover {
-  background: var(--surface-glass-hover);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(26, 35, 52, 0.96);
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .pill-dot,
@@ -344,8 +348,8 @@ body {
 .status-capsule {
   padding: 6px 8px 6px 14px;
   gap: 10px;
-  background: rgba(15, 20, 30, 0.76);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: #111827;
+  border-color: rgba(255, 255, 255, 0.15);
   max-width: 100%;
 }
 
@@ -373,10 +377,8 @@ body {
   align-items: center;
   padding: 4px;
   gap: 2px;
-  background: var(--surface-glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-capsule);
 }
@@ -2265,6 +2267,9 @@ textarea {
     position: static;
     grid-template-columns: 1fr;
     gap: 10px;
+    padding: 12px;
+    border-radius: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
   .topbar-left,
   .topbar-right {
