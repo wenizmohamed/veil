@@ -546,9 +546,10 @@ describe("MV3 Chrome Extension & README link parity", () => {
     expect(manifest.side_panel?.default_path).toBe("sidepanel.html");
   });
 
-  it("links the submitted Devpost v3 demo video in README.md", () => {
+  it("links the submitted Devpost v4 demo video in README.md", () => {
     const readme = fs.readFileSync(path.resolve(process.cwd(), "README.md"), "utf8");
-    expect(readme).toContain("https://youtu.be/z2dt5Z9dvWA");
+    expect(readme).toContain("https://youtu.be/GG7WxycPcp8");
     expect(readme).not.toContain("eHMcEEeoXLA");
+    expect(readme).not.toContain("z2dt5Z9dvWA");
   });
 });
