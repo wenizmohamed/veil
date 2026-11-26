@@ -16,7 +16,7 @@ import {
   loadPolicy,
   signIn,
   detectorModel,
-  reasonerModel,
+  generateWithCloudResilience,
   saveReceipt,
   InferenceSource,
 } from "../src/firebase.js";
@@ -43,7 +43,10 @@ function renderRestoredHtml(segs) {
 
 async function detectOnDevice(text) {
   const rules = detectWithRules(text, policy.categories);
-  const avail = await self.LanguageModel?.availability?.({ expectedInputs: [{ type: "text", languages: ["en"] }] }).catch(() => "unavailable");
+  const avail = await self.LanguageModel?.availability?.({
+    expectedInputs: [{ type: "text", languages: ["en"] }],
+    expectedOutputs: [{ type: "text", languages: ["en"] }],
+  }).catch(() => "unavailable");
   if ((avail === "available" || avail === "readily") && detector) {
     try {
       await detector.initializeDeviceModel();
@@ -85,8 +88,7 @@ async function runExtensionFlow({ approveRulesOnly = false } = {}) {
     }
 
     $("#extStatus").textContent = local ? "Reasoning 100% locally..." : `Asking ${policy.cloudModel} on placeholders only...`;
-    const model = reasonerModel(policy, local);
-    const res = await model.generateContent(outbound);
+    const { res, modelUsed, failedOver } = await generateWithCloudResilience(policy, local, outbound);
     const draft = res.response.text();
     const resSrc = res.response.inferenceSource || (local ? "on_device" : "in_cloud");
     const { text: restored, segments, unknownTokens, restoredCount } = unmaskSegments(draft, plan);
@@ -94,9 +96,9 @@ async function runExtensionFlow({ approveRulesOnly = false } = {}) {
     lastRestored = restored;
     $("#extOut").innerHTML = renderRestoredHtml(segments);
     $("#extCopyBtn").disabled = !restored.length;
-    $("#extBadge").textContent = resSrc === InferenceSource.ON_DEVICE ? "100% Local" : "Hybrid Cloud";
+    $("#extBadge").textContent = resSrc === InferenceSource.ON_DEVICE ? "100% Local" : `Hybrid · ${failedOver ? `${modelUsed} failover` : modelUsed}`;
     $("#extStatus").className = "meta status-ok";
-    $("#extStatus").textContent = `Verified: ${plan.length} masked · 0 leaked · ${restoredCount} restored locally.`;
+    $("#extStatus").textContent = `Verified (${modelUsed}): ${plan.length} masked · 0 leaked · ${restoredCount} restored locally.`;
 
     if (user) {
       const receipt = buildReceiptPayload({

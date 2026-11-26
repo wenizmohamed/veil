@@ -8,7 +8,7 @@ import {
   FIRESTORE_RULES_SOURCE, FIRESTORE_ATTACK_VECTORS,
   NANO_DETECT_PROMPT, TASKS, PRESETS, CATEGORIES,
 } from "./veil-core.js";
-import { loadPolicy, signIn, detectorModel, reasonerModel, saveReceipt, loadReceipts, InferenceSource } from "./firebase.js";
+import { loadPolicy, signIn, detectorModel, generateWithCloudResilience, saveReceipt, loadReceipts, InferenceSource } from "./firebase.js";
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -853,7 +853,10 @@ async function getLocalNanoAvailability() {
     return "unavailable";
   }
   try {
-    return await self.LanguageModel.availability({ expectedInputs: [{ type: "text", languages: ["en"] }] });
+    return await self.LanguageModel.availability({
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    });
   } catch {
     try {
       return await self.LanguageModel.availability();
@@ -1033,10 +1036,14 @@ async function run({ approveRulesOnly = false } = {}) {
       dot: "busy",
     });
     const tCloud = performance.now();
-    const reasoner = reasonerModel(policy, local);
-    let res;
+    let res, modelUsed = local ? "gemini-nano" : policy.cloudModel, failedOver = false;
     try {
-      res = await reasoner.generateContent(outbound);
+      const out = await generateWithCloudResilience(policy, local, outbound, {
+        onRetry: (m, kind) => setStep(3, "busy", kind === "failover" ? `High demand on ${policy.cloudModel}; switching to ${m}...` : `Retrying ${m}...`),
+      });
+      res = out.res;
+      modelUsed = out.modelUsed;
+      failedOver = out.failedOver;
     } catch (reasonErr) {
       if (local && state.detectorSource === "rules_only") {
         setStep(3, "warn", "Local-only reasoning needs Chrome Gemini Nano.");
@@ -1056,11 +1063,12 @@ async function run({ approveRulesOnly = false } = {}) {
     const source = res.response.inferenceSource || (local ? "on_device" : "in_cloud");
     const draft = res.response.text();
     const ranLocally = source === InferenceSource.ON_DEVICE || source === "on_device";
+    const activeModelLabel = ranLocally ? "On-Device Nano" : (failedOver ? `${modelUsed} (failover)` : modelUsed);
     setStep(3, "done", ranLocally
       ? `Answered on this device (${Math.round(cloudMs)} ms).`
-      : `Answered by ${policy.cloudModel} (${Math.round(cloudMs)} ms): saw placeholders only.`);
+      : `Answered by ${activeModelLabel} (${Math.round(cloudMs)} ms): saw placeholders only.`);
     $("#reasonerBadge").innerHTML = badge(source);
-    $("#routingReasonerPill").textContent = ranLocally ? "On-Device Nano" : policy.cloudModel;
+    $("#routingReasonerPill").textContent = activeModelLabel;
     $("#cloudSaid").innerHTML = renderTokenizedHtml(draft);
 
     // 3b. Cryptographic wiretap proof over the exact raw HTTP JSON bytes sent to Firebase AI Logic.
@@ -1114,7 +1122,7 @@ async function run({ approveRulesOnly = false } = {}) {
     $("#metricLatencyNum").textContent = String(Math.max(1, Math.round(deviceMs)));
     $("#telemetryModeBadge").className = ranLocally ? "badge dev" : "badge cloud";
     $("#telemetryModeBadge").textContent = ranLocally ? "100% On-Device" : "Hybrid Verified";
-    $("#auditRouteTag").textContent = ranLocally ? "Route: 100% On-Device" : `Route: Hybrid (${policy.cloudModel})`;
+    $("#auditRouteTag").textContent = ranLocally ? "Route: 100% On-Device" : `Route: Hybrid (${activeModelLabel})`;
     renderWaveform({ maskedCount: state.plan.length, localOnly: ranLocally, verified: true });
 
     updateStatusCapsule({

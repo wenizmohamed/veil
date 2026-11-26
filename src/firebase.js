@@ -82,25 +82,75 @@ export function signIn() {
   });
 }
 
+export const CLOUD_FALLBACK_MODEL = "gemini-3.5-flash-lite";
+
 /** The detector: Gemini Nano only. If the device model is missing this throws: secrets never go to the cloud to be found. */
 export function detectorModel() {
   return getGenerativeModel(ai, {
     mode: InferenceMode.ONLY_ON_DEVICE,
     onDeviceParams: {
-      createOptions: { temperature: 0.1, topK: 1, expectedInputs: [{ type: "text", languages: ["en"] }] },
+      createOptions: {
+        temperature: 0.1,
+        topK: 1,
+        expectedInputs: [{ type: "text", languages: ["en"] }],
+        expectedOutputs: [{ type: "text", languages: ["en"] }],
+      },
       promptOptions: { responseConstraint: NANO_SCHEMA },
     },
   });
 }
 
 /** The reasoner: works on masked text only. Cloud by default; on-device when the user picks "Keep everything local". */
-export function reasonerModel(policy, local) {
+export function reasonerModel(policy, local, modelOverride = null) {
   if (!local) ensureAppCheck();
   return getGenerativeModel(ai, {
     mode: local ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.ONLY_IN_CLOUD,
-    inCloudParams: { model: policy.cloudModel, systemInstruction: CLOUD_SYSTEM, generationConfig: { temperature: 0.4 } },
-    onDeviceParams: { createOptions: { initialPrompts: [{ role: "system", content: CLOUD_SYSTEM }] } },
+    inCloudParams: { model: modelOverride || policy.cloudModel, systemInstruction: CLOUD_SYSTEM, generationConfig: { temperature: 0.4 } },
+    onDeviceParams: {
+      createOptions: {
+        initialPrompts: [{ role: "system", content: CLOUD_SYSTEM }],
+        expectedInputs: [{ type: "text", languages: ["en"] }],
+        expectedOutputs: [{ type: "text", languages: ["en"] }],
+      },
+    },
   });
+}
+
+function isTransientCloudError(err) {
+  const msg = String(err?.message || err || "");
+  return /\b(500|502|503|429)\b|high demand|temporarily|unavailable|INTERNAL|fetch-error|network/i.test(msg);
+}
+
+/**
+ * Invokes cloud or local reasoning with automatic transient retry + failover to Spark-safe Flash-Lite
+ * when the primary Gemini 4 Hydrogen model hits upstream high-demand spikes.
+ */
+export async function generateWithCloudResilience(policy, local, prompt, { onRetry } = {}) {
+  if (local) {
+    const res = await reasonerModel(policy, true).generateContent(prompt);
+    return { res, modelUsed: "gemini-nano", failedOver: false };
+  }
+
+  const primary = policy?.cloudModel || "gemini-4-hydrogen";
+  try {
+    const res = await reasonerModel(policy, false, primary).generateContent(prompt);
+    return { res, modelUsed: primary, failedOver: false };
+  } catch (firstErr) {
+    if (!isTransientCloudError(firstErr)) throw firstErr;
+    onRetry?.(primary, "retry");
+    await new Promise((r) => setTimeout(r, 550));
+    try {
+      const res = await reasonerModel(policy, false, primary).generateContent(prompt);
+      return { res, modelUsed: primary, failedOver: false };
+    } catch (secondErr) {
+      if (!isTransientCloudError(secondErr) || primary === CLOUD_FALLBACK_MODEL) {
+        throw secondErr;
+      }
+      onRetry?.(CLOUD_FALLBACK_MODEL, "failover");
+      const res = await reasonerModel(policy, false, CLOUD_FALLBACK_MODEL).generateContent(prompt);
+      return { res, modelUsed: CLOUD_FALLBACK_MODEL, failedOver: true };
+    }
+  }
 }
 
 function receiptCollection(uid) {
