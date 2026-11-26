@@ -15,7 +15,7 @@ const $$ = (s) => Array.from(document.querySelectorAll(s));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 let policy = {
-  cloudModel: "gemini-3.5-flash-lite",
+  cloudModel: "gemini-4-hydrogen",
   categories: [...CATEGORIES],
   allowLocalReasoning: true,
   maxChars: 6000,

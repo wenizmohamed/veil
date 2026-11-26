@@ -37,7 +37,7 @@ const db = getFirestore(app);
 const rc = getRemoteConfig(app);
 rc.settings.minimumFetchIntervalMillis = 10 * 60 * 1000;
 rc.defaultConfig = {
-  veil_cloud_model: "gemini-3.5-flash-lite",
+  veil_cloud_model: "gemini-4-hydrogen",
   veil_categories: JSON.stringify(CATEGORIES),
   veil_allow_local_reasoning: true,
   veil_max_chars: 6000,

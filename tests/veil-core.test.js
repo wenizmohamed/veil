@@ -258,8 +258,8 @@ describe("12-trap adversarial PII stress test & wiretap cryptographic proof", ()
       receiptPayload,
       sha256Hex: "a".repeat(64),
       outboundBytes: 420,
-      wiretapEndpoint: "firebasevertexai.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
-      policySnapshot: { source: "remote", cloudModel: "gemini-3.5-flash-lite", categories: ["PERSON"], maxChars: 6000 },
+      wiretapEndpoint: "firebasevertexai.googleapis.com/v1beta/models/gemini-4-hydrogen:generateContent",
+      policySnapshot: { source: "remote", cloudModel: "gemini-4-hydrogen", categories: ["PERSON"], maxChars: 6000 },
       stressTestSummary: runAdversarialStressTest(),
     });
     expect(cert.schema).toBe("veil.zero-text-compliance-certificate/v1");
@@ -451,7 +451,7 @@ describe("batch multi-document redaction queue & consolidated compliance bundle"
       batchSummary: batch,
       docDigests: { finance: "1".repeat(64), healthcare: "2".repeat(64), legal: "3".repeat(64) },
       bundleSha256: "f".repeat(64),
-      policySnapshot: { source: "remote", cloudModel: "gemini-3.5-flash-lite", categories: ["PERSON"], maxChars: 6000 },
+      policySnapshot: { source: "remote", cloudModel: "gemini-4-hydrogen", categories: ["PERSON"], maxChars: 6000 },
       rulesTestSummary: rulesSuite,
     });
     expect(bundle.schema).toBe("veil.batch-zero-text-compliance-bundle/v1");

@@ -24,7 +24,7 @@ import {
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-let policy = { cloudModel: "gemini-3.5-flash-lite", categories: [...CATEGORIES], maxChars: 6000 };
+let policy = { cloudModel: "gemini-4-hydrogen", categories: [...CATEGORIES], maxChars: 6000 };
 let user = null;
 let detector = null;
 let lastRestored = "";

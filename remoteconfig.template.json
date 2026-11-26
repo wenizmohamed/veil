@@ -1,8 +1,8 @@
 {
   "parameters": {
     "veil_cloud_model": {
-      "defaultValue": { "value": "gemini-3.5-flash-lite" },
-      "description": "Cloud model that answers over masked text.",
+      "defaultValue": { "value": "gemini-4-hydrogen" },
+      "description": "Cloud Gemini 4 model (Firebase AI Logic Flagship Efficiency) that answers over masked text.",
       "valueType": "STRING"
     },
     "veil_categories": {
