@@ -740,11 +740,11 @@ function resetSteps() {
   setStep(4, "", "Real values back, on device");
 }
 
-function badge(source) {
+function badge(source, cloudModelLabel = policy.cloudModel) {
   return source === InferenceSource.ON_DEVICE || source === "on_device"
     ? `<span class="badge dev">On device · Gemini Nano</span>`
     : source === "rules_only" ? `<span class="badge rules">On device · rules only</span>`
-    : `<span class="badge cloud">In cloud · ${esc(policy.cloudModel)}</span>`;
+    : `<span class="badge cloud">In cloud · ${esc(cloudModelLabel)}</span>`;
 }
 
 function renderTokenizedHtml(text) {
@@ -1067,7 +1067,7 @@ async function run({ approveRulesOnly = false } = {}) {
     setStep(3, "done", ranLocally
       ? `Answered on this device (${Math.round(cloudMs)} ms).`
       : `Answered by ${activeModelLabel} (${Math.round(cloudMs)} ms): saw placeholders only.`);
-    $("#reasonerBadge").innerHTML = badge(source);
+    $("#reasonerBadge").innerHTML = badge(source, activeModelLabel);
     $("#routingReasonerPill").textContent = activeModelLabel;
     $("#cloudSaid").innerHTML = renderTokenizedHtml(draft);
 
