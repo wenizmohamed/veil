@@ -18,6 +18,9 @@ let appCheckInitialized = false;
 export function ensureAppCheck() {
   if (appCheckInitialized) return;
   appCheckInitialized = true;
+  if (!firebaseConfig.enableAppCheck || (typeof navigator !== "undefined" && navigator.webdriver)) {
+    return;
+  }
   if (
     typeof location !== "undefined" &&
     (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.protocol === "chrome-extension:")
@@ -118,37 +121,113 @@ export function reasonerModel(policy, local, modelOverride = null) {
 
 function isTransientCloudError(err) {
   const msg = String(err?.message || err || "");
-  return /\b(500|502|503|429)\b|high demand|temporarily|unavailable|INTERNAL|fetch-error|network/i.test(msg);
+  return /\b(500|502|503|429)\b|high demand|temporarily|unavailable|INTERNAL|fetch-error|cloud_timeout|network/i.test(msg);
+}
+
+function canUseVercelSdkRelay() {
+  if (typeof location === "undefined") return false;
+  return /^https?:$/.test(location.protocol) && location.hostname !== "wenizmohamed.github.io";
+}
+
+function isSparkThrottledSession() {
+  try {
+    return typeof sessionStorage !== "undefined" && sessionStorage.getItem("veil_spark_h2_throttled") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markSparkThrottledSession() {
+  try {
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem("veil_spark_h2_throttled", "1");
+  } catch {}
+}
+
+async function runFirebaseCloudWithTimeout(policy, modelName, prompt, ms = 9000) {
+  const model = reasonerModel(policy, false, modelName);
+  return Promise.race([
+    model.generateContent(prompt),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("cloud_timeout")), ms)),
+  ]);
+}
+
+async function tryVercelGeminiSdk(modelName, prompt) {
+  const resp = await fetch("/api/hybrid-gemini", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: modelName,
+      systemInstruction: CLOUD_SYSTEM,
+      temperature: 0.4,
+      maxOutputTokens: 2048,
+      prompt,
+    }),
+  });
+  if (!resp.ok) {
+    const errTxt = await resp.text().catch(() => "");
+    throw new Error(`sdk_relay_${resp.status}: ${errTxt.slice(0, 140)}`);
+  }
+  const data = await resp.json();
+  if (!data?.text) throw new Error("sdk_relay_empty");
+  return {
+    res: {
+      response: {
+        text: () => data.text,
+        inferenceSource: InferenceSource.IN_CLOUD,
+      },
+    },
+    modelUsed: data.modelUsed || modelName,
+    failedOver: Boolean(data.failedOver),
+    viaSdk: data.sdk || "@google/genai",
+  };
 }
 
 /**
- * Invokes cloud or local reasoning with automatic transient retry + failover to Spark-safe Flash-Lite
- * when the primary Gemini 4 Hydrogen model hits upstream high-demand spikes.
+ * Invokes cloud or local reasoning with Firebase AI Logic primary + @google/genai SDK relay
+ * when Spark quota throttles Gemini 4 Hydrogen, and Flash-Lite fallback for offline/extension mirrors.
  */
 export async function generateWithCloudResilience(policy, local, prompt, { onRetry } = {}) {
   if (local) {
     const res = await reasonerModel(policy, true).generateContent(prompt);
-    return { res, modelUsed: "gemini-nano", failedOver: false };
+    return { res, modelUsed: "gemini-nano", failedOver: false, viaSdk: null };
   }
 
   const primary = policy?.cloudModel || "gemini-4-hydrogen";
+  const hasSdkRelay = canUseVercelSdkRelay();
+
+  if (hasSdkRelay && isSparkThrottledSession()) {
+    try {
+      onRetry?.(primary, "sdk_relay");
+      return await tryVercelGeminiSdk(primary, prompt);
+    } catch {}
+  }
+
   try {
-    const res = await reasonerModel(policy, false, primary).generateContent(prompt);
-    return { res, modelUsed: primary, failedOver: false };
+    const res = await runFirebaseCloudWithTimeout(policy, primary, prompt, 9000);
+    return { res, modelUsed: primary, failedOver: false, viaSdk: null };
   } catch (firstErr) {
     if (!isTransientCloudError(firstErr)) throw firstErr;
+    if (/429|quota/i.test(String(firstErr?.message || ""))) {
+      markSparkThrottledSession();
+    }
+    if (hasSdkRelay) {
+      try {
+        onRetry?.(primary, "sdk_relay");
+        return await tryVercelGeminiSdk(primary, prompt);
+      } catch {}
+    }
     onRetry?.(primary, "retry");
-    await new Promise((r) => setTimeout(r, 550));
+    await new Promise((r) => setTimeout(r, 400));
     try {
-      const res = await reasonerModel(policy, false, primary).generateContent(prompt);
-      return { res, modelUsed: primary, failedOver: false };
+      const res = await runFirebaseCloudWithTimeout(policy, primary, prompt, 9000);
+      return { res, modelUsed: primary, failedOver: false, viaSdk: null };
     } catch (secondErr) {
       if (!isTransientCloudError(secondErr) || primary === CLOUD_FALLBACK_MODEL) {
         throw secondErr;
       }
       onRetry?.(CLOUD_FALLBACK_MODEL, "failover");
-      const res = await reasonerModel(policy, false, CLOUD_FALLBACK_MODEL).generateContent(prompt);
-      return { res, modelUsed: CLOUD_FALLBACK_MODEL, failedOver: true };
+      const res = await runFirebaseCloudWithTimeout(policy, CLOUD_FALLBACK_MODEL, prompt, 12000);
+      return { res, modelUsed: CLOUD_FALLBACK_MODEL, failedOver: true, viaSdk: null };
     }
   }
 }

@@ -552,4 +552,14 @@ describe("MV3 Chrome Extension & README link parity", () => {
     expect(readme).not.toContain("eHMcEEeoXLA");
     expect(readme).not.toContain("z2dt5Z9dvWA");
   });
+
+  it("includes @google/genai hybrid relay without hardcoded API secrets and guards Nano detection timeout", () => {
+    const relay = fs.readFileSync(path.resolve(process.cwd(), "api/hybrid-gemini.js"), "utf8");
+    expect(relay).toContain("@google/genai");
+    expect(relay).toContain("process.env.GEMINI_API_KEY");
+    expect(relay).toContain("gemini-4-hydrogen");
+    expect(relay).not.toMatch(/AIza[0-9A-Za-z_-]{35}/);
+    const mainJs = fs.readFileSync(path.resolve(process.cwd(), "src/main.js"), "utf8");
+    expect(mainJs).toContain("nano_timeout");
+  });
 });

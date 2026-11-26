@@ -63,7 +63,7 @@ if (typeof window !== "undefined" && typeof window.fetch === "function" && !wind
   window.fetch = async (input, init) => {
     try {
       const url = typeof input === "string" ? input : input?.url || "";
-      if (/firebasevertexai\.googleapis\.com|generativelanguage\.googleapis\.com/i.test(url) && /generateContent/i.test(url)) {
+      if ((/firebasevertexai\.googleapis\.com|generativelanguage\.googleapis\.com/i.test(url) && /generateContent/i.test(url)) || /\/api\/hybrid-gemini\b/i.test(url)) {
         let rawBody = "";
         if (typeof init?.body === "string") rawBody = init.body;
         else if (init?.body instanceof Uint8Array || init?.body instanceof ArrayBuffer) {
@@ -72,7 +72,7 @@ if (typeof window !== "undefined" && typeof window.fetch === "function" && !wind
           rawBody = await input.clone().text();
         }
         if (rawBody) {
-          const parsedUrl = new URL(url);
+          const parsedUrl = new URL(url, location.href);
           state.lastWiretap = {
             endpoint: `${parsedUrl.host}${parsedUrl.pathname}`,
             rawBody,
@@ -907,10 +907,17 @@ async function detect(text) {
   let nano = [];
   state.detectorSource = "rules_only";
   if (await ensureDevice()) {
+    const nanoDeadline = Date.now() + 8000;
+    const raceNano = (p) => {
+      const rem = nanoDeadline - Date.now();
+      if (rem <= 50) return Promise.reject(new Error("nano_timeout"));
+      return Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error("nano_timeout")), rem))]);
+    };
     try {
-      // Gemini Nano has a small context window: read the text in paragraph-sized chunks.
+      setStep(1, "busy", "Scanning on device with Chrome Gemini Nano...");
+      // Gemini Nano has a small context window: read the text in paragraph-sized chunks within an 8s budget.
       for (const chunk of chunks(text, 900)) {
-        const res = await detector.generateContent(NANO_DETECT_PROMPT(chunk, policy.categories));
+        const res = await raceNano(detector.generateContent(NANO_DETECT_PROMPT(chunk, policy.categories)));
         const parsed = JSON.parse(res.response.text());
         nano.push(...sanitizeModelSpans(chunk, parsed.entities, policy.categories));
         state.detectorSource = res.response.inferenceSource || "on_device";
@@ -921,7 +928,7 @@ async function detect(text) {
         try {
           nano = [];
           for (const small of chunks(text, 360)) {
-            const res = await detector.generateContent(NANO_DETECT_PROMPT(small, policy.categories));
+            const res = await raceNano(detector.generateContent(NANO_DETECT_PROMPT(small, policy.categories)));
             const parsed = JSON.parse(res.response.text());
             nano.push(...sanitizeModelSpans(small, parsed.entities, policy.categories));
             state.detectorSource = res.response.inferenceSource || "on_device";
@@ -1036,14 +1043,23 @@ async function run({ approveRulesOnly = false } = {}) {
       dot: "busy",
     });
     const tCloud = performance.now();
-    let res, modelUsed = local ? "gemini-nano" : policy.cloudModel, failedOver = false;
+    let res, modelUsed = local ? "gemini-nano" : policy.cloudModel, failedOver = false, viaSdk = null;
     try {
       const out = await generateWithCloudResilience(policy, local, outbound, {
-        onRetry: (m, kind) => setStep(3, "busy", kind === "failover" ? `High demand on ${policy.cloudModel}; switching to ${m}...` : `Retrying ${m}...`),
+        onRetry: (m, kind) => {
+          if (kind === "sdk_relay") {
+            setStep(3, "busy", `Routing ${m} via @google/genai SDK...`);
+          } else if (kind === "failover") {
+            setStep(3, "busy", `High demand on ${policy.cloudModel}; switching to ${m}...`);
+          } else {
+            setStep(3, "busy", `Retrying ${m}...`);
+          }
+        },
       });
       res = out.res;
       modelUsed = out.modelUsed;
       failedOver = out.failedOver;
+      viaSdk = out.viaSdk || null;
     } catch (reasonErr) {
       if (local && state.detectorSource === "rules_only") {
         setStep(3, "warn", "Local-only reasoning needs Chrome Gemini Nano.");
@@ -1063,7 +1079,13 @@ async function run({ approveRulesOnly = false } = {}) {
     const source = res.response.inferenceSource || (local ? "on_device" : "in_cloud");
     const draft = res.response.text();
     const ranLocally = source === InferenceSource.ON_DEVICE || source === "on_device";
-    const activeModelLabel = ranLocally ? "On-Device Nano" : (failedOver ? `${modelUsed} (failover)` : modelUsed);
+    const activeModelLabel = ranLocally
+      ? "On-Device Nano"
+      : failedOver
+        ? `${modelUsed} (failover)`
+        : viaSdk
+          ? `${modelUsed} (${viaSdk})`
+          : modelUsed;
     setStep(3, "done", ranLocally
       ? `Answered on this device (${Math.round(cloudMs)} ms).`
       : `Answered by ${activeModelLabel} (${Math.round(cloudMs)} ms): saw placeholders only.`);

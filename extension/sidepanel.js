@@ -41,6 +41,13 @@ function renderRestoredHtml(segs) {
     .join("");
 }
 
+function raceTimeout(promise, ms, msg = "nano_timeout") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+  ]);
+}
+
 async function detectOnDevice(text) {
   const rules = detectWithRules(text, policy.categories);
   const avail = await self.LanguageModel?.availability?.({
@@ -49,8 +56,13 @@ async function detectOnDevice(text) {
   }).catch(() => "unavailable");
   if ((avail === "available" || avail === "readily") && detector) {
     try {
-      await detector.initializeDeviceModel();
-      const res = await detector.generateContent(NANO_DETECT_PROMPT(text.slice(0, 900), policy.categories));
+      $("#extStatus").textContent = "Step 1/4: Running Chrome Gemini Nano (on-device)...";
+      const deadline = Date.now() + 8000;
+      await raceTimeout(detector.initializeDeviceModel(), Math.max(1000, deadline - Date.now()));
+      const res = await raceTimeout(
+        detector.generateContent(NANO_DETECT_PROMPT(text.slice(0, 900), policy.categories)),
+        Math.max(1000, deadline - Date.now())
+      );
       const parsed = JSON.parse(res.response.text());
       return { spans: [...sanitizeModelSpans(text, parsed.entities, policy.categories), ...rules], source: "on_device" };
     } catch {
