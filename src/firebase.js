@@ -18,10 +18,17 @@ let appCheckInitialized = false;
 export function ensureAppCheck() {
   if (appCheckInitialized) return;
   appCheckInitialized = true;
-  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+  if (
+    typeof location !== "undefined" &&
+    (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.protocol === "chrome-extension:")
+  ) {
     self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
   }
-  initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
+  try {
+    initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey), isTokenAutoRefreshEnabled: true });
+  } catch (e) {
+    console.warn("App Check lazy init skipped:", e?.message || e);
+  }
 }
 
 const ai = getAI(app, { backend: new GoogleAIBackend() });

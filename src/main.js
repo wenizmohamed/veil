@@ -848,13 +848,42 @@ function selectPreset(id) {
   previewLocalShield();
 }
 
+async function getLocalNanoAvailability() {
+  if (typeof self === "undefined" || typeof self.LanguageModel?.availability !== "function") {
+    return "unavailable";
+  }
+  try {
+    return await self.LanguageModel.availability({ expectedInputs: [{ type: "text", languages: ["en"] }] });
+  } catch {
+    try {
+      return await self.LanguageModel.availability();
+    } catch {
+      return "unavailable";
+    }
+  }
+}
+
 async function ensureDevice() {
   if (deviceReady || !detector) return deviceReady;
-  try {
-    await detector.initializeDeviceModel((p) => setStep(1, "busy", `Downloading Gemini Nano... ${Math.round(p * 100)}%`));
-    deviceReady = true;
-  } catch (e) {
-    console.warn("On-device model unavailable", e);
+  const avail = await getLocalNanoAvailability();
+  if (avail === "available" || avail === "readily") {
+    try {
+      await detector.initializeDeviceModel((p) => setStep(1, "busy", `Loading Gemini Nano... ${Math.round(p * 100)}%`));
+      deviceReady = true;
+    } catch {
+      deviceReady = false;
+    }
+    return deviceReady;
+  }
+  // When weights are downloadable in a real browser (non-webdriver), trigger download only if it transitions to available.
+  if ((avail === "downloadable" || avail === "downloading") && !navigator.webdriver) {
+    try {
+      await detector.initializeDeviceModel((p) => setStep(1, "busy", `Downloading Gemini Nano... ${Math.round(p * 100)}%`));
+      const postAvail = await getLocalNanoAvailability();
+      deviceReady = postAvail === "available" || postAvail === "readily";
+    } catch {
+      deviceReady = false;
+    }
   }
   return deviceReady;
 }
@@ -884,8 +913,23 @@ async function detect(text) {
         state.detectorSource = res.response.inferenceSource || "on_device";
       }
     } catch (e) {
-      console.warn("Nano detection failed; rules only", e);
-      if (!nano.length) state.detectorSource = "rules_only";
+      if (e?.name === "QuotaExceededError") {
+        // Retry with smaller slices before cleanly falling back to deterministic rules
+        try {
+          nano = [];
+          for (const small of chunks(text, 360)) {
+            const res = await detector.generateContent(NANO_DETECT_PROMPT(small, policy.categories));
+            const parsed = JSON.parse(res.response.text());
+            nano.push(...sanitizeModelSpans(small, parsed.entities, policy.categories));
+            state.detectorSource = res.response.inferenceSource || "on_device";
+          }
+        } catch {
+          nano = [];
+          state.detectorSource = "rules_only";
+        }
+      } else {
+        if (!nano.length) state.detectorSource = "rules_only";
+      }
     }
   }
   return [...nano, ...rules];

@@ -2,7 +2,7 @@
 
 [![Devpost Submission](https://img.shields.io/badge/Devpost-%23BuildHybridAI%202026-003E54?style=for-the-badge&logo=devpost&logoColor=white)](https://devpost.com/software/veil-s8zt3e)
 [![Live App](https://img.shields.io/badge/Live%20App-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://veil-team-auraa.vercel.app/)
-[![Demo Video](https://img.shields.io/badge/Demo%20Video-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/eHMcEEeoXLA)
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/z2dt5Z9dvWA)
 
 **Use cloud AI on text you can't share.** Gemini Nano finds the private values in your text on your device and swaps them for placeholders. Gemini in the cloud works on the placeholders. Veil puts the real values back locally. The cloud never sees the names, account numbers, amounts or keys.
 
@@ -73,15 +73,24 @@ On `localhost` the app uses an App Check **debug token**: the browser console pr
 
 `npm run build` writes the static site to `docs/`, which GitHub Pages serves.
 
+## Chrome Extension (Manifest V3 Side Panel)
+
+Veil also ships as an installable Chrome Manifest V3 Side Panel extension under [`extension/dist/`](extension/dist/) sharing the exact same on-device privacy core and Firebase AI Logic SDK:
+
+1. Run `npm run build:ext` (or use the prebuilt `extension/dist/` folder).
+2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `extension/dist/`.
+3. Highlight text on any page and right-click **Mask & Ask Veil (On-Device First)** (or click the toolbar icon) to mask locally, reason in the cloud over placeholders only, and restore locally.
+
 ## Project layout
 
 ```
-src/veil-core.js      masking plan, mask, leak guard, unmask, Nano prompt + schema (pure, tested)
-src/firebase.js       AI Logic hybrid models, App Check, Auth, Remote Config, Firestore
-src/main.js           the four-step flow and UI
-tests/                vitest suite for the privacy core
-firestore.rules       receipts: counts and sources only
-docs/                 built site for GitHub Pages
+src/veil-core.js         masking plan, mask, leak guard, unmask, Nano prompt + schema (pure, tested)
+src/firebase.js          AI Logic hybrid models, App Check, Auth, Remote Config, Firestore
+src/main.js              the four-step flow and UI
+extension/               Manifest V3 Chrome Extension (Side Panel + context menu -> extension/dist/)
+tests/                   vitest suite for the privacy core & MV3 bundle
+firestore.rules          receipts: counts and sources only
+docs/                    built site for GitHub Pages & Vercel
 ```
 
 ## Limits

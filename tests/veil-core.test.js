@@ -535,3 +535,20 @@ describe("on-device vs cloud telemetry & privacy byte-split analytics", () => {
     expect(split.bytes.piiBytesOnWire).toBe(1);
   });
 });
+
+describe("MV3 Chrome Extension & README link parity", () => {
+  it("ships a valid Manifest V3 Chrome Extension with sidePanel and contextMenus", () => {
+    const manifestPath = path.resolve(process.cwd(), "extension/public/manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    expect(manifest.manifest_version).toBe(3);
+    expect(manifest.permissions).toContain("sidePanel");
+    expect(manifest.permissions).toContain("contextMenus");
+    expect(manifest.side_panel?.default_path).toBe("sidepanel.html");
+  });
+
+  it("links the submitted Devpost v3 demo video in README.md", () => {
+    const readme = fs.readFileSync(path.resolve(process.cwd(), "README.md"), "utf8");
+    expect(readme).toContain("https://youtu.be/z2dt5Z9dvWA");
+    expect(readme).not.toContain("eHMcEEeoXLA");
+  });
+});
